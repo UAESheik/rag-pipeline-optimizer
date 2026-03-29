@@ -1,0 +1,7 @@
+Query: What signals tend to matter for SME credit assessment?
+
+Answer: [D002] [D003] [D006] [D007] [D008] SME lending decisions typically combine bureau signals, cashflow trends, collateral coverage, and sector outlook. Recent delinquency often materially increases risk.
+
+Composite: 0.64
+Failure: 弱监督下覆盖不足
+RAGChecker: 幻觉风险 medium: 无支撑 token 占比 0.217 | 查询偏移: 答案与查询重叠仅 0.03

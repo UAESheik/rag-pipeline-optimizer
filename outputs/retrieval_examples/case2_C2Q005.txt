@@ -1,0 +1,3 @@
+Query: What controls are important before sending CRM data to an external model?
+
+Retrieved: D001|D003|D008|D006|D002

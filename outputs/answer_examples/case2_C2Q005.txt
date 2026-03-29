@@ -1,0 +1,7 @@
+Query: What controls are important before sending CRM data to an external model?
+
+Answer: [D001] [D002] [D003] [D006] [D008] A retail bank CRM assistant should use the latest source of truth from product policy documents and fee schedules. Personal data fields must be masked before external model calls.
+
+Composite: 0.7559
+Failure: 通过
+RAGChecker: 查询偏移: 答案与查询重叠仅 0.095

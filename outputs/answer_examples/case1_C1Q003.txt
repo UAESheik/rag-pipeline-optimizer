@@ -1,0 +1,7 @@
+Query: How can a RAG system improve retrieval quality?
+
+Answer: RAG systems often improve retrieval quality by tuning chunk size, overlap, metadata enrichment, hybrid retrieval, reranking, and query rewriting before generation.
+
+Composite: 0.8804
+Failure: 通过
+RAGChecker: 无明显问题

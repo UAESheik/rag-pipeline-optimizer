@@ -1,0 +1,3 @@
+Query: What signals tend to matter for SME credit assessment?
+
+Retrieved: D006|D002|D007|D003|D008

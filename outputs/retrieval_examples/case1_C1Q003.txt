@@ -1,0 +1,3 @@
+Query: How can a RAG system improve retrieval quality?
+
+Retrieved: D008|D010|D004|D005|D001
