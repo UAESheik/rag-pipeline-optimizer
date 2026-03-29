@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# pytest / test cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Outputs (generated at runtime, not committed)
+outputs/.cache/
+outputs/retrieval_examples/
+outputs/answer_examples/
+outputs/*.png
+outputs/run_summary.csv
+outputs/per_query_diagnostics.csv
+outputs/pareto_frontier_case*.csv
+outputs/best_config.json
+outputs/final_report.md
+
+# MLflow
+mlruns/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp / patch scripts
+_tmp_*.py

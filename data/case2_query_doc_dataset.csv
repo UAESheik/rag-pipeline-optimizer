@@ -1,0 +1,6 @@
+query_id,query,reference_doc_ids
+C2Q001,What are the main fee-exemption conditions for Singapore savings accounts?,D003|D004|D007|D008|D009
+C2Q002,What signals tend to matter for SME credit assessment?,D001|D005|D006|D007|D010
+C2Q003,What should a bank check before issuing provisional credit for a card dispute?,D003|D006|D007|D007|D010
+C2Q004,How should a RAG optimizer evaluate systems when only queries and documents are available?,D001|D003|D004|D006|D010
+C2Q005,What controls are important before sending CRM data to an external model?,D001|D002|D003|D007|D010
