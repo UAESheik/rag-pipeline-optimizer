@@ -284,39 +284,55 @@ python main.py --max-trials 10
 ---
 
 ## 7. 如何对比优化（Case1 vs Case2）
+
 本节说明同一优化器在案例 1 和案例 2 中的行为差异，以及如何进行对比分析。
+
 ### 7.1 对比目标
+
 - **Case1（有监督）**：目标是提升“答案质量 + 证据一致性”
   - 关键指标：`context_recall`、`answer_similarity`、`faithfulness`
 - **Case2（弱监督）**：目标是提升“检索覆盖 + 证据绑定 + 引用质量”
   - 关键指标：`retrieval_coverage_proxy`、`groundedness`、`citation_quality`
-核心区别：Case1 直接依赖参考答案进行质量约束，Case2 不依赖参考答案，更关注证据覆盖和可落证性。
+  核心区别：Case1 直接依赖参考答案进行质量约束，Case2 不依赖参考答案，更关注证据覆盖和可落证性。
+
 ### 7.2 优化器行为差异（重点）
+
 1. **评分函数不同**
+
 - Case1 在 `case1_metrics` 路径打分，强调答案与参考答案的一致性。
 - Case2 在 `case2_metrics` 路径打分，强调检索命中与答案是否被上下文支持。
-2. **最优配置偏好不同**
+
+1. **最优配置偏好不同**
+
 - Case1 更容易偏好能提升答案相似度的配置（例如更稳的重排、较保守的生成参数）。
 - Case2 更容易偏好能提升覆盖率与 groundedness 的配置（例如检索召回更高或更利于引用的组合）。
-3. **风险信号关注点不同**
+
+1. **风险信号关注点不同**
+
 - Case1 更敏感于答案偏差（`answer_similarity` 下降）。
 - Case2 更敏感于证据不足或引用不一致（`retrieval_coverage_proxy` / `citation_quality` 下降）。
-4. **权重来源不同**
+
+1. **权重来源不同**
+
 - Case1 使用 `objective.case1_weights`。
 - Case2 使用 `objective.case2_weights`。
 - 两者的权重与来源会被记录到 `run_summary.csv` 与 `best_config.json`，可直接追踪。
+
 ### 7.3 如何做对比优化（推荐步骤）
+
 1. 使用同一数据版本、同一搜索方法（`grid` 或 `bayes`）分别运行 Case1 与 Case2。
 2. 对比 `outputs/run_summary.csv` 中两个 case 的：
-   - `mean_composite`
-   - 最优配置参数（retriever/chunk/rerank/query_processor）
-   - `objective_weight_source` 与 `objective_weights`
+  - `mean_composite`
+  - 最优配置参数（retriever/chunk/rerank/query_processor）
+  - `objective_weight_source` 与 `objective_weights`
 3. 对比 `outputs/best_config.json` 的 `case1` 与 `case2`：
-   - `train_score`、`holdout_score`、`overfit_gap`
+  - `train_score`、`holdout_score`、`overfit_gap`
 4. 结合 `per_query_diagnostics.csv` 观察失败模式：
-   - Case1 侧重答案偏差
-   - Case2 侧重证据覆盖与引用质量
+  - Case1 侧重答案偏差
+  - Case2 侧重证据覆盖与引用质量
+
 ### 7.4 对比结论应如何解读
+
 - 若 Case1 高、Case2 低：通常表示答案质量可控，但检索覆盖或引用链路仍需加强。
 - 若 Case2 高、Case1 低：通常表示证据链较完整，但生成答案与参考答案一致性不足。
 - 若两者都高：说明当前配置在监督与弱监督场景下均具备较好稳定性。
@@ -394,12 +410,6 @@ python main.py --max-trials 10
 - LLM Judge 与人工评分相关性约 0.7~0.85，不等同于黄金标准
 - 同批次分数可能波动 +-0.1；优化目标中建议权重 <= 0.1
 - 若用 `judge_score` 选配置，建议对 holdout 同时做人工抽查
-
-### 9.6 实践建议
-
-- 四个框架借鉴均为自实现核心算法，每处均在代码注释中说明来源与替换位置
-- 建议先替换单模块，保持同一指标体系横向对比
-- 不建议同时开启多个在线增强功能（BERTScore + RAGAS + LLM Judge），避免引入多重不稳定性
 
 ---
 
