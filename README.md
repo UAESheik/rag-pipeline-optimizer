@@ -15,7 +15,7 @@
 
 - **统一优化内核**：同一优化器可切换 Case1/Case2 目标函数
 - **模块化流水线**：chunking / retrieval / reranking / generation 可独立替换
-- **多种搜索方式**：支持网格搜索与贝叶斯搜索（Optuna）
+- **多种搜索方式**：支持网格搜索、随机搜索与贝叶斯搜索（Optuna）
 - **可观测结果输出**：自动生成 `best_config.json`、`run_summary.csv`、`per_query_diagnostics.csv`、Pareto 前沿文件
 - **离线优先**：在线增强组件不可用时，自动降级，保证主流程可运行
 
@@ -243,6 +243,21 @@ python main.py --max-trials 10
 - `--data-dir`：数据目录
 - `--output-dir`：输出目录
 
+### 5.3 LLM 真实调用优先 + 兜底机制
+
+本项目默认支持**免费开源本地 LLM（Ollama）**，真实调用失败时自动兜底。
+
+推荐（面试项目）默认使用本地开源模型：
+
+```bash
+# 本地 Ollama
+set RAG_OPT_LLM_MODEL=qwen2.5:7b-instruct
+set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
+```
+
+外部调用日志在运行时直接输出到终端。
+可通过 `status=start/success/fallback/error` 快速判断是否连通。
+
 ---
 
 ## 6. 配置说明
@@ -269,17 +284,23 @@ python main.py --max-trials 10
 ### 6.2 目标函数权重
 
 - `objective.case1_weights`
-  - `context_recall`, `answer_similarity`, `faithfulness`
+  - `context_recall`, `answer_similarity`, `faithfulness`, `answer_relevancy`, `context_relevancy`
 - `objective.case2_weights`
-  - `retrieval_coverage_proxy`, `groundedness`, `citation_quality`
+  - `retrieval_coverage_proxy`, `groundedness`, `citation_quality`, `answer_relevancy`, `context_relevancy`
+- `objective.judge_weight`
+  - 将 `judge_score` 以小权重并入最终 `composite`（默认 0.03）
 
-这些权重会在 `metrics.py` 中参与 composite 加权计算。
+这些权重会在 `metrics.py` 与 `optimizer.py` 中参与 composite 加权计算。
 
 ### 6.3 运行配置
 
-- `run.search_method`：`grid` 或 `bayes`
+- `run.search_method`：`grid` / `random` / `bayes`
 - `run.cache_enabled`：是否启用缓存
-- `run.use_ragas` / `run.use_bertscore` / `run.use_llm_judge`：是否启用增强评估
+- `run.use_ragas` / `run.use_bertscore` / `run.use_llm_judge` / `run.use_llm_generator`：是否启用增强评估与生成
+- `run.llm_model`：模型名称（如 `qwen2.5:7b-instruct`）
+- `run.ragas_min_usage_threshold`：RAGAS 有效使用率阈值（低于阈值触发信号守卫）
+- `run.ragas_guard_mode`：`invalid`（trial 直接无效）或 `penalty`（强惩罚）
+- `run.ragas_guard_penalty`：`penalty` 模式下的降权系数
 
 ---
 
@@ -401,15 +422,18 @@ python main.py --max-trials 10
 
 **已在代码中实现（`src/evaluation/diagnostics.py`）：**
 
-- `judge_groundedness_score()`：统一接地性评分接口，token 覆盖率代理（离线）
-- `_llm_judge_call()`：LLM Judge 占位，含详细替换注释
-- 输出到 `per_query_diagnostics.csv`：`judge_score` / `judge_method` / `judge_warning` 三列
+- `judge_groundedness_score()`：统一接地性评分接口，**真实 LLM 调用优先，代理评分兜底**
+- 支持两类 provider：
+  - `ollama`：免费开源本地模型
+  - `openai`：OpenAI 兼容接口
+- 输出到 `per_query_diagnostics.csv`：`judge_score` / `judge_method` / `judge_warning`
+- 所有外部调用写入 `outputs/external_calls.jsonl`，可观测 `start/success/fallback/error`
 
-**谨慎使用说明：**
+**防止“虚假信号”说明：**
 
-- LLM Judge 与人工评分相关性约 0.7~0.85，不等同于黄金标准
-- 同批次分数可能波动 +-0.1；优化目标中建议权重 <= 0.1
-- 若用 `judge_score` 选配置，建议对 holdout 同时做人工抽查
+- `metrics.py` 新增 `signal_quality`，用于标记真实评估信号占比
+- 当 RAGAS/BERTScore 等真实信号不可用时，`composite` 会自动施加 `signal_penalty`，避免优化器过拟合代理指标
+- 因此，最终排序是“任务指标 × 信号质量约束”，比单纯 token overlap 更稳健
 
 ---
 
