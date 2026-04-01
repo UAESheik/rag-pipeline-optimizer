@@ -1,7 +1,7 @@
 Query: How should evaluation change when no reference answer exists?
 
-Answer: [D001] [D002] [D005] [D009] [D010] When no reference answer exists, evaluation should emphasize retrieval coverage, citation quality, answer groundedness, and model-based pairwise judgment with human spot checks.
+Answer: When no reference answer exists, evaluation should emphasize retrieval coverage, citation quality, answer groundedness, and model-based pairwise judgment with human spot checks. [D010]
 
-Composite: 0.6723
-Failure: 通过
-RAGChecker: 幻觉风险 medium: 无支撑 token 占比 0.2
+Composite: 0.5912
+Failure: 生成存在幻觉风险
+RAGChecker: 无明显问题

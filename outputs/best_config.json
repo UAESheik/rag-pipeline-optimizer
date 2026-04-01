@@ -1,68 +1,65 @@
 {
   "case1": {
-    "config_id": "cfg_00000",
+    "config_id": "cfg_00015",
+    "chunking": {
+      "strategy": "sentence",
+      "size": 512,
+      "overlap_type": "sentence",
+      "overlap_size": 128,
+      "semantic_min_size": 350,
+      "semantic_max_size": 650
+    },
     "retrieval": {
       "retriever": "hybrid",
-      "embedding_model": "e5-base",
-      "metadata_filter_enabled": false,
+      "embedding_model": "bge-small",
+      "metadata_filter_enabled": true,
       "metadata_enrichment": true,
       "metadata_filter_fields": [
         "section_title",
         "type"
       ]
     },
-    "chunking": {
-      "strategy": "token",
-      "size": 128,
-      "overlap_type": "token",
-      "overlap_size": 64,
-      "semantic_min_size": 350,
-      "semantic_max_size": 650,
-      "window_size": 3,
-      "similarity_threshold": 0.55,
-      "preserve_table_as_markdown": true,
-      "generate_image_caption": false
-    },
-    "generation": {
-      "answer_style": "citation_first",
-      "temperature": 0.0
-    },
-    "reranking": {
-      "enabled": false,
-      "model": "bge-reranker-base"
-    },
     "query_processor": {
       "rewrite": false,
       "decompose": false,
-      "intent_driven_filter": false
+      "intent_driven_filter": true
     },
-    "train_score": 0.6503,
-    "holdout_score": 0.8926,
-    "overfit_gap": -0.2423
+    "generation": {
+      "answer_style": "concise",
+      "temperature": 0.0
+    },
+    "reranking": {
+      "enabled": true,
+      "model": "bge-reranker-base"
+    },
+    "train_score": 0.5784,
+    "holdout_score": 0.6003,
+    "overfit_gap": -0.0219
   },
   "case2": {
-    "config_id": "cfg_00000",
+    "config_id": "cfg_00019",
+    "chunking": {
+      "strategy": "token",
+      "size": 256,
+      "overlap_type": "sentence",
+      "overlap_size": 100,
+      "semantic_min_size": 350,
+      "semantic_max_size": 650
+    },
     "retrieval": {
       "retriever": "hybrid",
       "embedding_model": "e5-base",
-      "metadata_filter_enabled": false,
-      "metadata_enrichment": true,
+      "metadata_filter_enabled": true,
+      "metadata_enrichment": false,
       "metadata_filter_fields": [
         "section_title",
         "type"
       ]
     },
-    "chunking": {
-      "strategy": "token",
-      "size": 128,
-      "overlap_type": "token",
-      "overlap_size": 64,
-      "semantic_min_size": 350,
-      "semantic_max_size": 650,
-      "window_size": 3,
-      "similarity_threshold": 0.55,
-      "preserve_table_as_markdown": true,
-      "generate_image_caption": false
+    "query_processor": {
+      "rewrite": false,
+      "decompose": false,
+      "intent_driven_filter": false
     },
     "generation": {
       "answer_style": "citation_first",
@@ -72,13 +69,8 @@
       "enabled": false,
       "model": "bge-reranker-base"
     },
-    "query_processor": {
-      "rewrite": false,
-      "decompose": false,
-      "intent_driven_filter": false
-    },
-    "train_score": 0.7042,
-    "holdout_score": 0.8423,
-    "overfit_gap": -0.1381
+    "train_score": 0.4928,
+    "holdout_score": 0.6096,
+    "overfit_gap": -0.1168
   }
 }

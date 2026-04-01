@@ -1,0 +1,11 @@
+case_num,metric,spearman_vs_composite,mean,min,max
+2,composite,1.0,0.4928,0.4105,0.553
+2,context_recall,0.0,0.0,0.0,0.0
+2,answer_similarity,0.0,0.0,0.0,0.0
+2,faithfulness,0.0,0.0,0.0,0.0
+2,retrieval_coverage_proxy,0.6325,0.525,0.4,0.6
+2,groundedness,-0.2,0.5447,0.4555,0.5833
+2,citation_quality,0.3162,0.6,0.2,1.0
+2,answer_relevancy,0.0,0.1887,0.0991,0.2928
+2,context_relevancy,-0.4,0.0456,0.0346,0.0554
+2,judge_score,0.0,0.0,0.0,0.0

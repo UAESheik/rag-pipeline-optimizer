@@ -1,2 +1,3 @@
-config_id,mean_composite,trial_seconds,retriever,embedding_model,chunk_strategy,chunk_size,rerank_enabled
-cfg_00000,0.7042,0.1486,hybrid,e5-base,token,128,False
+config_id,mean_composite,trial_seconds,retriever,embedding_model,chunk_strategy,chunk_size,rerank_enabled,context_recall,answer_similarity,faithfulness,retrieval_coverage_proxy,groundedness,citation_quality,answer_relevancy,context_relevancy,signal_quality,composite_no_judge,judge_score
+cfg_00019,0.4928,4.5483,hybrid,e5-base,token,256,False,0.0,0.0,0.0,0.525,0.5447,0.6,0.1887,0.0456,0.84,0.4977,0.0
+cfg_00003,0.4685,3.1495,hybrid,bge-small,sentence,256,False,0.0,0.0,0.0,0.525,0.4655,0.45,0.1694,0.0456,0.78,0.4732,0.0

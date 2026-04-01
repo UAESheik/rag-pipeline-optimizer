@@ -1,7 +1,7 @@
 Query: What are the main fee-exemption conditions for Singapore savings accounts?
 
-Answer: [D002] [D003] [D006] [D007] [D009] For Singapore savings accounts, fall-below fees depend on average daily balance and customer segment. Some premium segments are exempt.
+Answer: Based on the provided context, there are no specific details about fee-exemption conditions for Singapore savings accounts. The context mentions fall-below fees depending on average daily balance and customer segment, but it does not provide information about exemptions for these fees. Therefore, there is insufficient evidence to cite a specific document (DOC_ID) for the main fee-exemption conditions for Singapore savings accounts. [D003]
 
-Composite: 0.7375
-Failure: 通过
-RAGChecker: 幻觉风险 medium: 无支撑 token 占比 0.25
+Composite: 0.5023
+Failure: 答案与证据绑定不足
+RAGChecker: 幻觉风险 high: 无支撑 token 占比 0.727

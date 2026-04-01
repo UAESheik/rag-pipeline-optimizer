@@ -1,2 +1,6 @@
-config_id,mean_composite,trial_seconds,retriever,embedding_model,chunk_strategy,chunk_size,rerank_enabled
-cfg_00000,0.6503,8.7419,hybrid,e5-base,token,128,False
+config_id,mean_composite,trial_seconds,retriever,embedding_model,chunk_strategy,chunk_size,rerank_enabled,context_recall,answer_similarity,faithfulness,retrieval_coverage_proxy,groundedness,citation_quality,answer_relevancy,context_relevancy,signal_quality,composite_no_judge,judge_score
+cfg_00015,0.5784,330.965,hybrid,bge-small,sentence,512,True,0.5938,0.6013,0.5113,0.0,0.0,0.0,0.3472,0.0712,1.0,0.5771,0.7031
+cfg_00013,0.5748,330.7454,hybrid,bge-small,sentence,512,True,0.5938,0.6088,0.4753,0.0,0.0,0.0,0.3169,0.0712,1.0,0.5756,0.5
+cfg_00019,0.5625,330.6969,bm25,bge-small,token,256,True,0.5649,0.6013,0.4909,0.0,0.0,0.0,0.3472,0.0788,1.0,0.5632,0.5
+cfg_00006,0.5472,316.2403,bm25,e5-base,token,512,True,0.5649,0.5863,0.4308,0.0,0.0,0.0,0.293,0.0788,1.0,0.5482,0.4537
+cfg_00007,0.3072,305.8123,dense,bge-small,semantic,128,True,0.4163,0.2193,0.3423,0.0,0.0,0.0,0.1906,0.0309,1.0,0.3104,0.0
