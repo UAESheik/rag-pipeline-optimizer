@@ -4,24 +4,26 @@
       "strategy": ["token", "sentence", "semantic"],
       "size": [128, 256, 384, 512],
       "overlap_type": ["token", "sentence"],
-      "overlap_size": [64, 100, 128],
-      "semantic_min_size": [350],
-      "semantic_max_size": [650],
+      "overlap_size": [32, 64, 100, 128],
+      "semantic_min_size": [200, 350],
+      "semantic_max_size": [500, 650, 800],
       "window_size": [3, 5],
-      "similarity_threshold": [0.55, 0.65],
+      "similarity_threshold": [0.55, 0.65, 0.75],
       "preserve_table_as_markdown": [false, true],
       "generate_image_caption": [false, true]
     },
     "retrieval": {
       "retriever": ["bm25", "dense", "hybrid"],
       "embedding_model": ["bge-small", "e5-base"],
-      "metadata_filter_enabled": [true],
+      "metadata_filter_enabled": [false, true],
       "metadata_filter_fields": ["section_title", "type"],
-      "metadata_enrichment": [true]
+      "metadata_enrichment": [false, true],
+      "top_k": [5, 10, 15]
     },
     "reranking": {
       "enabled": [false, true],
-      "model": ["bge-reranker-base", "cross-encoder/ms-marco-MiniLM-L-6-v2"]
+      "model": ["bge-reranker-base", "cross-encoder/ms-marco-MiniLM-L-6-v2"],
+      "rerank_top_k": [3, 5, 10]
     },
     "query_processor": {
       "rewrite": [false, true],
@@ -29,22 +31,24 @@
       "intent_driven_filter": [false, true]
     },
     "generation": {
-      "temperature": [0.0],
-      "answer_style": ["concise", "citation_first"]
+      "temperature": [0.0, 0.1, 0.2],
+      "answer_style": ["concise", "concise_with_evidence", "citation_first"],
+      "prompt_template": ["standard", "strict_no_hallucination"],
+      "max_new_tokens": [128, 256]
     }
   },
   "objective": {
     "case1_weights": {
-      "context_recall": 0.38,
-      "answer_similarity": 0.23,
+      "context_recall": 0.45,
+      "answer_similarity": 0.17,
       "faithfulness": 0.35,
       "answer_relevancy": 0.02,
-      "context_relevancy": 0.02
+      "context_relevancy": 0.01
     },
     "case2_weights": {
-      "retrieval_coverage_proxy": 0.05,
-      "groundedness": 0.55,
-      "citation_quality": 0.35,
+      "retrieval_coverage_proxy": 0.03,
+      "groundedness": 0.47,
+      "citation_quality": 0.45,
       "answer_relevancy": 0.03,
       "context_relevancy": 0.02
     },
@@ -52,10 +56,10 @@
   },
   "run": {
     "random_seed": 42,
-    "max_trials": 80,
-    "top_k": 6,
-    "cache_enabled": false,
-    "search_method": "bayes",
+    "max_trials": 150,
+    "top_k": 10,
+    "cache_enabled": true,
+    "search_method": "random",
     "use_bertscore": true,
     "mlflow_enabled": true,
     "mlflow_tracking_uri": "sqlite:///outputs/mlflow.db",

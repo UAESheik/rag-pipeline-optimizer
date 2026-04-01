@@ -52,6 +52,8 @@ def generate_answer(
     temperature: float = 0.0,
     llm_model: str = "qwen2.5:3b-instruct",
     use_llm: bool = True,
+    prompt_template: str = "standard",
+    max_new_tokens: int = 256,
 ) -> str:
     """基于检索上下文生成答案（真实调用优先，失败回退抽取式）。"""
     if not retrieved:
@@ -59,12 +61,18 @@ def generate_answer(
     if not use_llm:
         return _build_extract_answer(retrieved, answer_style)
 
-    context = "\n\n".join(f"[{chunk.doc_id}] {chunk.text[:800]}" for chunk, _ in retrieved[:6])
     style_rule = (
         "Please answer with explicit citations like [DOC_ID] for key claims."
         if answer_style == "citation_first"
         else "Please answer concisely with at least one citation like [DOC_ID]."
     )
+    if answer_style == "concise_with_evidence":
+        style_rule = "Answer concisely and include one short evidence sentence with citation [DOC_ID]."
+
+    if prompt_template == "strict_no_hallucination":
+        style_rule += " If context is insufficient, answer exactly: INSUFFICIENT_EVIDENCE."
+
+    context = "\n\n".join(f"[{chunk.doc_id}] {chunk.text[:max_new_tokens]}" for chunk, _ in retrieved[:6])
     messages = [
         {
             "role": "system",
