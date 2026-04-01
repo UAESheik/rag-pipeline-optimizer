@@ -15,45 +15,45 @@
     "retrieval": {
       "retriever": ["bm25", "dense", "hybrid"],
       "embedding_model": ["bge-small", "e5-base"],
-      "metadata_filter_enabled": [false, true],
+      "metadata_filter_enabled": [true],
       "metadata_filter_fields": ["section_title", "type"],
-      "metadata_enrichment": [false, true]
+      "metadata_enrichment": [true]
     },
     "reranking": {
       "enabled": [false, true],
       "model": ["bge-reranker-base", "cross-encoder/ms-marco-MiniLM-L-6-v2"]
     },
     "query_processor": {
-      "rewrite": [false],
-      "decompose": [false],
+      "rewrite": [false, true],
+      "decompose": [false, true],
       "intent_driven_filter": [false, true]
     },
     "generation": {
-      "temperature": [0.0, 0.2],
+      "temperature": [0.0],
       "answer_style": ["concise", "citation_first"]
     }
   },
   "objective": {
     "case1_weights": {
-      "context_recall": 0.4,
-      "answer_similarity": 0.45,
-      "faithfulness": 0.12,
+      "context_recall": 0.38,
+      "answer_similarity": 0.23,
+      "faithfulness": 0.35,
       "answer_relevancy": 0.02,
-      "context_relevancy": 0.01
+      "context_relevancy": 0.02
     },
     "case2_weights": {
-      "retrieval_coverage_proxy": 0.75,
-      "groundedness": 0.2,
-      "citation_quality": 0.02,
-      "answer_relevancy": 0.02,
-      "context_relevancy": 0.01
+      "retrieval_coverage_proxy": 0.05,
+      "groundedness": 0.55,
+      "citation_quality": 0.35,
+      "answer_relevancy": 0.03,
+      "context_relevancy": 0.02
     },
     "judge_weight": 0.01
   },
   "run": {
     "random_seed": 42,
-    "max_trials": 60,
-    "top_k": 8,
+    "max_trials": 80,
+    "top_k": 6,
     "cache_enabled": false,
     "search_method": "bayes",
     "use_bertscore": true,
