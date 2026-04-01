@@ -758,7 +758,10 @@ class RAGOptimizer:
         try:
             import mlflow
 
-            tracking_uri = str(self.output_dir / "mlruns")
+            tracking_uri = str(self.config.get("run", {}).get("mlflow_tracking_uri", "")).strip()
+            if not tracking_uri:
+                db_path = (self.output_dir / "mlflow.db").resolve().as_posix()
+                tracking_uri = f"sqlite:///{db_path}"
             mlflow.set_tracking_uri(tracking_uri)
             mlflow.set_experiment("rag_optimizer")
             with mlflow.start_run(run_name=f"case{case_num}_{best_cfg.get('config_id', 'na')}"):

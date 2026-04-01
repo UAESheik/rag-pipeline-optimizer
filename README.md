@@ -297,6 +297,7 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 - `run.search_method`：`grid` / `random` / `bayes`
 - `run.cache_enabled`：是否启用缓存
 - `run.use_ragas` / `run.use_bertscore` / `run.use_llm_judge` / `run.use_llm_generator`：是否启用增强评估与生成
+- `run.mlflow_tracking_uri`：MLflow Tracking URI（建议 `sqlite:///outputs/mlflow.db`，避免 filesystem backend 弃用警告）
 - `run.llm_model`：模型名称（如 `qwen2.5:7b-instruct`）
 - `run.ragas_min_usage_threshold`：RAGAS 有效使用率阈值（低于阈值触发信号守卫）
 - `run.ragas_guard_mode`：`invalid`（trial 直接无效）或 `penalty`（强惩罚）

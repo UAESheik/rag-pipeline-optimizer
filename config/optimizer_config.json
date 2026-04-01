@@ -59,6 +59,7 @@
     "use_ragas": true,
     "use_bertscore": true,
     "mlflow_enabled": true,
+    "mlflow_tracking_uri": "sqlite:///outputs/mlflow.db",
     "use_llm_judge": true,
     "use_llm_generator": true,
     "llm_model": "qwen2.5:7b-instruct",
