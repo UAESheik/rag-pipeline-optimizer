@@ -255,6 +255,34 @@ class RAGOptimizer:
         train = data[n_holdout:] if len(data) > n_holdout else data
         return train, holdout
 
+    def _estimate_external_signal_availability(self) -> Dict[str, bool]:
+        """估计外部评估链路是否可用（依赖+本地服务连通性）。"""
+        out = {"ragas": False, "bertscore": False, "llm_judge": False, "llm_generator": False}
+        try:
+            import ragas  # noqa: F401
+            out["ragas"] = True
+        except Exception:
+            out["ragas"] = False
+
+        try:
+            import bert_score  # noqa: F401
+            out["bertscore"] = True
+        except Exception:
+            out["bertscore"] = False
+
+        ollama_ok = False
+        try:
+            base_url = os.getenv("RAG_OPT_OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+            req = urllib.request.Request(f"{base_url}/api/tags", method="GET")
+            with urllib.request.urlopen(req, timeout=2):
+                ollama_ok = True
+        except Exception:
+            ollama_ok = False
+
+        out["llm_judge"] = bool(self.config.get("run", {}).get("use_llm_judge", False)) and ollama_ok
+        out["llm_generator"] = bool(self.config.get("run", {}).get("use_llm_generator", False)) and ollama_ok
+        return out
+
     def _run_case(self, case_num: int, cfg: Dict[str, Any], dataset_override: list | None = None) -> Dict[str, Any]:
         dataset = dataset_override if dataset_override is not None else (self.case1 if case_num == 1 else self.case2)
         chunks = self._build_chunks(cfg)
@@ -638,6 +666,7 @@ class RAGOptimizer:
             "train_score": best_score,
             "holdout_score": holdout_score,
             "overfit_gap": round(best_score - holdout_score, 4),
+            "external_signal_availability": self._estimate_external_signal_availability(),
         }
 
     def _write_pareto_plot(self, out_dir: Path, rows: List[Dict[str, Any]], case_num: int) -> None:
