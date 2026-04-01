@@ -90,19 +90,17 @@ flowchart TD
     classDef caseSwitch fill:#fbbf24,stroke:#f59e0b,color:#1f2937,stroke-width:2px
 
     Start[循环启动]:::startEnd --> S1
-    S1[从搜索空间采样候选配置<br/>网格/贝叶斯优化]:::step --> S2
+    S1[从搜索空间采样候选配置<br/>网格/随机/贝叶斯优化]:::step --> S2
     S2[执行完整RAG全链路流程]:::step --> CaseSwitch
     CaseSwitch[切换对应场景评估函数]:::caseSwitch --> Case1[Case1 有监督指标]:::caseSwitch
     CaseSwitch --> Case2[Case2 弱监督代理指标]:::caseSwitch
     Case1 & Case2 --> S3
-    S3[计算mean_composite综合得分]:::step --> S4
-    S4[记录实验数据<br/>更新当前最优配置]:::step --> S5
-    S5[holdout集泛化评估<br/>计算overfit_gap]:::step --> J1
-    J1{满足停止条件?<br/>轮次上限/无精度提升}:::judge -->|否| S1
-    J1 -->|是| J2
-    J2{满足泛化约束?<br/>overfit_gap在阈值内}:::judge -->|否| S1
-    J2 -->|是| FinalOutput
-    FinalOutput[输出最优配置+Pareto前沿报告]:::output --> End[循环结束]:::startEnd
+    S3[计算 mean_composite 综合得分]:::step --> S4
+    S4[记录实验数据并更新当前最优配置]:::step --> J1
+    J1{是否达到 max_trials?}:::judge -->|否| S1
+    J1 -->|是| S5
+    S5[在 holdout 集评估最优配置<br/>输出 train/holdout/overfit_gap]:::step --> FinalOutput
+    FinalOutput[输出最优配置+Pareto前沿+诊断报告]:::output --> End[循环结束]:::startEnd
 ```
 
 
@@ -117,20 +115,22 @@ flowchart LR
 
     subgraph Case1[Case1 有监督场景 【有参考答案+参考上下文】]
         direction TB
-        M1[context_recall 权重0.4<br/>检索证据覆盖度]:::metric
-        M2[answer_similarity 权重0.4<br/>答案与参考一致性]:::metric
-        M3[faithfulness 权重0.2<br/>答案证据支撑度]:::metric
-        Comp1[组合目标<br/>0.4*M1 + 0.4*M2 + 0.2*M3]:::composite
-        M1 & M2 & M3 --> Comp1
+        M1[context_recall 权重0.42<br/>检索证据覆盖度]:::metric
+        M2[answer_similarity 权重0.32<br/>答案与参考一致性]:::metric
+        M3[faithfulness 权重0.24<br/>答案证据支撑度]:::metric
+        M4[answer/context relevancy 权重0.02<br/>查询-答案-上下文相关性]:::metric
+        Comp1[组合目标<br/>0.42*M1 + 0.32*M2 + 0.24*M3 + 0.02*M4]:::composite
+        M1 & M2 & M3 & M4 --> Comp1
     end
 
     subgraph Case2[Case2 弱监督场景 【无参考答案，仅参考文档ID】]
         direction TB
-        N1[retrieval_coverage_proxy 权重0.5<br/>检索文档覆盖率]:::metric
-        N2[groundedness 权重0.3<br/>答案证据支撑度]:::metric
-        N3[citation_quality 权重0.2<br/>引用一致性]:::metric
-        Comp2[组合目标<br/>0.5*N1 + 0.3*N2 + 0.2*N3]:::composite
-        N1 & N2 & N3 --> Comp2
+        N1[retrieval_coverage_proxy 权重0.10<br/>检索文档覆盖率]:::metric
+        N2[groundedness 权重0.50<br/>答案证据支撑度]:::metric
+        N3[citation_quality 权重0.35<br/>引用一致性]:::metric
+        N4[answer/context relevancy 权重0.05<br/>查询-答案-上下文相关性]:::metric
+        Comp2[组合目标<br/>0.10*N1 + 0.50*N2 + 0.35*N3 + 0.05*N4]:::composite
+        N1 & N2 & N3 & N4 --> Comp2
     end
 ```
 
@@ -154,7 +154,7 @@ flowchart LR
 | 查询改写 | expand / decompose / HyDE            | `src/retrieval/query_processor.py` | **DSPy**：`QuerySignature`+`QueryModule` 声明式结构    |
 | 生成   | concise / citation_first 两种模式        | `src/generation/generator.py`      | —                                                |
 | 指标评估 | Case1/Case2 双场景，支持 BERTScore + 代码代理指标 | `src/evaluation/metrics.py`        | —                                                |
-| 诊断分析 | RAGChecker 风格三项诊断 + LLM-as-Judge 接地性 | `src/evaluation/diagnostics.py`    | **LightRAG**：实体元数据注入 `_detect_entities()`        |
+| 诊断分析 | RAGChecker 风格三项诊断 + LLM-as-Judge 证据落地性 | `src/evaluation/diagnostics.py`    | **LightRAG**：实体元数据注入 `_detect_entities()`        |
 | 优化循环 | 搜索空间枚举 + Pareto 多目标分析                | `src/optimizer/optimizer.py`       | **AutoRAG**：`_iter_configs()`/`_run_case()` 评估闭环 |
 
 
@@ -166,8 +166,8 @@ flowchart LR
 | 失败类型    | 诊断信号                                                        | 处理策略                                             |
 | ------- | ----------------------------------------------------------- | ------------------------------------------------ |
 | 检索覆盖不足  | `context_recall` / `retrieval_coverage_proxy` 过低            | 调整 chunk size / overlap / top_k；启用 query rewrite |
-| 答案幻觉    | `faithfulness` / `groundedness` 低；`hallucination_risk=high` | 开启 reranker；采用 `citation_first` 生成样式             |
-| 外部模型不可用 | dense / BERTScore / cross-encoder 加载失败                      | 自动降级为 TF-IDF / token overlap，主流程不中断              |
+| 答案幻觉    | `faithfulness` / `groundedness` 低；`hallucination_risk=high` | Case2 默认 `citation_first` + `temperature=0.0` + 短答案约束；必要时再开启 reranker |
+| 外部模型不可用 | dense / BERTScore / cross-encoder 加载失败                      | 自动降级为 TF-IDF / 本地复合指标（token F1 + TF-IDF），主流程不中断 |
 | 过拟合     | `overfit_gap` 偏大                                            | 收缩搜索空间；调整指标权重；增加 holdout 比例                      |
 
 
@@ -247,7 +247,7 @@ python main.py --max-trials 10
 
 本项目默认支持**免费开源本地 LLM（Ollama）**，真实调用失败时自动兜底。
 
-推荐（面试项目）默认使用本地开源模型：
+推荐默认使用本地开源模型：
 
 ```bash
 # 本地 Ollama
@@ -284,17 +284,18 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 ### 6.2 目标函数权重
 
 - `objective.case1_weights`
-  - `context_recall`, `answer_similarity`, `faithfulness`, `answer_relevancy`, `context_relevancy`
+  - `context_recall=0.42`, `answer_similarity=0.32`, `faithfulness=0.24`, `answer_relevancy=0.01`, `context_relevancy=0.01`
 - `objective.case2_weights`
-  - `retrieval_coverage_proxy`, `groundedness`, `citation_quality`, `answer_relevancy`, `context_relevancy`
+  - `retrieval_coverage_proxy=0.10`, `groundedness=0.50`, `citation_quality=0.35`, `answer_relevancy=0.03`, `context_relevancy=0.02`
 - `objective.judge_weight`
-  - 将 `judge_score` 以小权重并入最终 `composite`（默认 0.03）
+  - 将 `judge_score` 以小权重并入最终 `composite`（默认 0.01）
 
 这些权重会在 `metrics.py` 与 `optimizer.py` 中参与 composite 加权计算。
 
 ### 6.3 运行配置
 
 - `run.search_method`：`grid` / `random` / `bayes`
+- `run.top_k`：默认 `6`（Case2 在运行时会再约束为不超过 6）
 - `run.cache_enabled`：是否启用缓存
 - `run.use_bertscore` / `run.use_llm_judge` / `run.use_llm_generator`：是否启用增强评估与生成
 - `run.mlflow_tracking_uri`：MLflow Tracking URI
@@ -310,9 +311,9 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 ### 7.1 对比目标
 
 - **Case1（有监督）**：目标是提升“答案质量 + 证据一致性”
-  - 关键指标：`context_recall`、`answer_similarity`、`faithfulness`
+  - 关键指标：`context_recall`、`answer_similarity`、`faithfulness`（证据忠实度）
 - **Case2（弱监督）**：目标是提升“检索覆盖 + 证据绑定 + 引用质量”
-  - 关键指标：`retrieval_coverage_proxy`、`groundedness`、`citation_quality`
+  - 关键指标：`retrieval_coverage_proxy`、`groundedness`（证据落地性）、`citation_quality`
   核心区别：Case1 直接依赖参考答案进行质量约束，Case2 不依赖参考答案，更关注证据覆盖和可落证性。
 
 ### 7.2 优化器行为差异（重点）
@@ -325,12 +326,12 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 1. **最优配置偏好不同**
 
 - Case1 更容易偏好能提升答案相似度的配置（例如更稳的重排、较保守的生成参数）。
-- Case2 更容易偏好能提升覆盖率与 groundedness 的配置（例如检索召回更高或更利于引用的组合）。
+- Case2 更容易偏好能提升覆盖率与 groundedness（证据落地性）的配置（当前策略优先 `bm25/hybrid`，并固定 `citation_first + temperature=0.0` 以压低幻觉噪声）。
 
 1. **风险信号关注点不同**
 
 - Case1 更敏感于答案偏差（`answer_similarity` 下降）。
-- Case2 更敏感于证据不足或引用不一致（`retrieval_coverage_proxy` / `citation_quality` 下降）。
+- Case2 更敏感于证据不足或引用不一致（`retrieval_coverage_proxy` / `citation_quality` / `groundedness`（证据落地性）下降）。
 
 1. **权重来源不同**
 
@@ -344,7 +345,7 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 2. 对比 `outputs/run_summary.csv` 中两个 case 的：
   - `mean_composite`
   - 最优配置参数（retriever/chunk/rerank/query_processor）
-  - `objective_weight_source` 与 `objective_weights`
+  - trial 级聚合指标（如 `groundedness`、`citation_quality`、`signal_quality`）
 3. 对比 `outputs/best_config.json` 的 `case1` 与 `case2`：
   - `train_score`、`holdout_score`、`overfit_gap`
 4. 结合 `per_query_diagnostics.csv` 观察失败模式：
@@ -363,13 +364,14 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 
 统一输出到 `outputs/`：
 
-1. `best_config.json`：每个 case 的最优配置与分数（含权重追踪字段）
-2. `run_summary.csv`：每次实验的配置、分数、耗时等汇总
+1. `best_config.json`：每个 case 的最优配置与分数
+2. `run_summary.csv`：每次实验的配置、分数、耗时与 trial 级聚合指标
 3. `per_query_diagnostics.csv`：逐 query 指标与诊断结果
-4. `pareto_frontier_case{1|2}.csv`：质量-延迟 Pareto 前沿
-5. `retrieval_examples/`：检索样例
-6. `answer_examples/`：答案样例
-7. `final_report.md`：最终总结报告
+4. `metric_sanity_case{1|2}.csv`：指标与 `composite` 的 Spearman 相关性 sanity check
+5. `pareto_frontier_case{1|2}.csv`：质量-延迟 Pareto 前沿
+6. `retrieval_examples/`：检索样例
+7. `answer_examples/`：答案样例
+8. `final_report.md`：最终总结报告
 
 ---
 
@@ -383,6 +385,7 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 
 - `_iter_configs()` / `_sample_config_by_trial()`：枚举所有超参组合（网格或贝叶斯）
 - `_run_case()`：每个候选配置执行完整 RAG 流程，返回 `mean_composite`（评估闭环）
+- Case2 定向约束：固定 `citation_first + temperature=0.0`，并将检索器约束为 `bm25/hybrid`（`dense` 自动回退 `bm25`）、`rerank=False`
 - 多目标 Pareto 分析：每次运行自动输出 `pareto_frontier_case{n}.csv`，质量-延迟权衡
 
 **非黑盒说明：** 不依赖 autorag 包；搜索与评估逻辑完全自实现，搜索空间通过配置文件显式定义。
@@ -427,11 +430,11 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 - 输出到 `per_query_diagnostics.csv`：`judge_score` / `judge_method` / `judge_warning`
 - 外部调用事件在运行时直接输出到终端（`start/success/fallback`）
 
-**防止“虚假信号”说明：**
+**评估稳健性说明：**
 
-- `metrics.py` 新增 `signal_quality`，用于标记真实评估信号占比
-- `optimizer.py` 新增 signal guard：当 `ragas_used` 低于阈值可直接判无效或强惩罚
-- 当全部 trial 被 guard 判无效时，自动回退到 `raw_mean_composite` 最优配置，保证报告可读性
+- `metrics.py` 引入 `signal_quality`，结合引用质量和评估信号强度对综合分做平滑惩罚
+- `optimizer.py` 输出 `metric_sanity_case{1|2}.csv`，以 Spearman 相关性检查指标是否与优化目标一致
+- 若某指标长期负相关，可通过 `objective.case1_weights` / `objective.case2_weights` 直接调权修正
 
 ---
 

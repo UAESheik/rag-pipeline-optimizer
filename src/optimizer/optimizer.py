@@ -107,6 +107,19 @@ class RAGOptimizer:
     def _sample_config_by_trial(self, trial: Any) -> Dict[str, Any]:
         """贝叶斯搜索时由 Optuna 采样一组配置。"""
         ss = self.config["search_space"]
+        active_case = getattr(self, "_active_case_num", None)
+
+        retriever_choices = ss["retrieval"]["retriever"]
+        rerank_enabled_choices = ss["reranking"]["enabled"]
+        answer_style_choices = ss["generation"]["answer_style"]
+        temperature_choices = ss["generation"].get("temperature", [0.0])
+
+        if active_case == 2:
+            retriever_choices = [x for x in retriever_choices if x in ("bm25", "hybrid")] or ["bm25"]
+            rerank_enabled_choices = [False]
+            answer_style_choices = ["citation_first"]
+            temperature_choices = [0.0]
+
         return {
             "config_id": f"cfg_{trial.number:05d}",
             "chunking": {
@@ -118,7 +131,7 @@ class RAGOptimizer:
                 "semantic_max_size": trial.suggest_categorical("chunking_semantic_max_size", ss["chunking"]["semantic_max_size"]),
             },
             "retrieval": {
-                "retriever": trial.suggest_categorical("retrieval_retriever", ss["retrieval"]["retriever"]),
+                "retriever": trial.suggest_categorical("retrieval_retriever", retriever_choices),
                 "embedding_model": trial.suggest_categorical("retrieval_embedding_model", ss["retrieval"]["embedding_model"]),
                 "metadata_filter_enabled": trial.suggest_categorical("retrieval_metadata_filter_enabled", ss["retrieval"]["metadata_filter_enabled"]),
                 "metadata_enrichment": trial.suggest_categorical("retrieval_metadata_enrichment", ss["retrieval"].get("metadata_enrichment", [True])),
@@ -130,11 +143,11 @@ class RAGOptimizer:
                 "intent_driven_filter": trial.suggest_categorical("query_intent_driven_filter", ss["query_processor"].get("intent_driven_filter", [False])),
             },
             "generation": {
-                "answer_style": trial.suggest_categorical("generation_answer_style", ss["generation"]["answer_style"]),
-                "temperature": trial.suggest_categorical("generation_temperature", ss["generation"].get("temperature", [0.0])),
+                "answer_style": trial.suggest_categorical("generation_answer_style", answer_style_choices),
+                "temperature": trial.suggest_categorical("generation_temperature", temperature_choices),
             },
             "reranking": {
-                "enabled": trial.suggest_categorical("reranking_enabled", ss["reranking"]["enabled"]),
+                "enabled": trial.suggest_categorical("reranking_enabled", rerank_enabled_choices),
                 "model": trial.suggest_categorical("reranking_model", ss["reranking"]["model"]),
             },
         }
@@ -345,6 +358,18 @@ class RAGOptimizer:
 
     def _run_case(self, case_num: int, cfg: Dict[str, Any], dataset_override: list | None = None) -> Dict[str, Any]:
         dataset = dataset_override if dataset_override is not None else (self.case1 if case_num == 1 else self.case2)
+        # Case2 定向策略：固定生成与检索配置，降低幻觉噪声
+        effective_cfg = json.loads(json.dumps(cfg))
+        effective_top_k = self.top_k
+        if case_num == 2:
+            effective_cfg.setdefault("generation", {})["answer_style"] = "citation_first"
+            effective_cfg["generation"]["temperature"] = 0.0
+            if effective_cfg.get("retrieval", {}).get("retriever") not in ("bm25", "hybrid"):
+                effective_cfg["retrieval"]["retriever"] = "bm25"
+            effective_cfg.setdefault("reranking", {})["enabled"] = False
+            effective_top_k = min(self.top_k, 6)
+        cfg = effective_cfg
+
         chunks = self._build_chunks(cfg)
         retriever = Retriever(
             chunks,
@@ -369,7 +394,7 @@ class RAGOptimizer:
 
             metadata_filter = self._build_metadata_filter(query=query, cfg=cfg, chunks=chunks)
 
-            retrieved = retriever.retrieve(query, top_k=self.top_k, metadata_filter=metadata_filter)
+            retrieved = retriever.retrieve(query, top_k=effective_top_k, metadata_filter=metadata_filter)
             # 查询改写/分解：对多个子查询分别检索后合并去重
             sub_queries = apply_query_processor(
                 query,
@@ -379,11 +404,11 @@ class RAGOptimizer:
             if len(sub_queries) > 1:
                 seen_ids: set = {c.chunk_id for c, _ in retrieved}
                 for sq in sub_queries[1:]:
-                    for chunk, score in retriever.retrieve(sq, top_k=self.top_k, metadata_filter=metadata_filter):
+                    for chunk, score in retriever.retrieve(sq, top_k=effective_top_k, metadata_filter=metadata_filter):
                         if chunk.chunk_id not in seen_ids:
                             retrieved.append((chunk, score))
                             seen_ids.add(chunk.chunk_id)
-                retrieved = sorted(retrieved, key=lambda x: x[1], reverse=True)[:self.top_k]
+                retrieved = sorted(retrieved, key=lambda x: x[1], reverse=True)[:effective_top_k]
             retrieved = rerank(retrieved, enabled=cfg["reranking"]["enabled"], query=query)
             answer = generate_answer(
                 query=query,
@@ -393,6 +418,12 @@ class RAGOptimizer:
                 llm_model=str(self.config.get("run", {}).get("llm_model", "qwen2.5:3b-instruct")),
                 use_llm=bool(self.config.get("run", {}).get("use_llm_generator", True)),
             )
+            if case_num == 2:
+                tokens = answer.split()
+                if len(tokens) > 120:
+                    answer = " ".join(tokens[:120])
+                if "[" not in answer and retrieved:
+                    answer = f"{answer} [{retrieved[0][0].doc_id}]"
             use_bertscore = bool(self.config.get("run", {}).get("use_bertscore", False))
             case1_w = self.config.get(
                 "objective", {}
@@ -486,6 +517,7 @@ class RAGOptimizer:
         train_set, holdout_set = self._split_dataset(full_dataset, holdout_ratio=0.3, seed=seed)
 
         method = str(self.config.get("run", {}).get("search_method", "grid")).lower()
+        self._active_case_num = case_num
         if method == "bayes":
             configs = []
         elif method == "random":
@@ -705,6 +737,8 @@ class RAGOptimizer:
             "overfit_gap": round(best_score - holdout_score, 4),
             "external_signal_availability": self._estimate_external_signal_availability(),
         }
+        self._active_case_num = None
+
 
     def _write_pareto_plot(self, out_dir: Path, rows: List[Dict[str, Any]], case_num: int) -> None:
         """

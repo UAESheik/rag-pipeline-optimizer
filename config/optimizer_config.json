@@ -35,17 +35,17 @@
   },
   "objective": {
     "case1_weights": {
-      "context_recall": 0.4,
+      "context_recall": 0.42,
       "answer_similarity": 0.32,
-      "faithfulness": 0.23,
-      "answer_relevancy": 0.02,
-      "context_relevancy": 0.03
+      "faithfulness": 0.24,
+      "answer_relevancy": 0.01,
+      "context_relevancy": 0.01
     },
     "case2_weights": {
-      "retrieval_coverage_proxy": 0.22,
-      "groundedness": 0.43,
-      "citation_quality": 0.28,
-      "answer_relevancy": 0.05,
+      "retrieval_coverage_proxy": 0.1,
+      "groundedness": 0.5,
+      "citation_quality": 0.35,
+      "answer_relevancy": 0.03,
       "context_relevancy": 0.02
     },
     "judge_weight": 0.01
@@ -53,7 +53,7 @@
   "run": {
     "random_seed": 42,
     "max_trials": 80,
-    "top_k": 7,
+    "top_k": 6,
     "cache_enabled": false,
     "search_method": "bayes",
     "use_bertscore": true,
