@@ -448,6 +448,21 @@ class RAGOptimizer:
                     best_per_query = res["per_query"]
                     all_ragchecker = res["ragchecker_findings"]
 
+        if (not best_cfg) and run_summary_rows:
+            fallback_row = max(run_summary_rows, key=lambda r: float(r.get("raw_mean_composite", r.get("mean_composite", -1.0))))
+            fallback_id = str(fallback_row.get("config_id", ""))
+            candidates = configs if method != "bayes" else []
+            for cfg_candidate in candidates:
+                if str(cfg_candidate.get("config_id", "")) == fallback_id:
+                    best_cfg = cfg_candidate
+                    break
+            if not best_cfg and method == "bayes":
+                # bayes 场景下若 guard 全部判无效，使用 study best_trial 对应配置兜底
+                try:
+                    best_cfg = self._sample_config_by_trial(study.best_trial)
+                except Exception:
+                    best_cfg = {}
+
         # 在保留集上验证最优配置（防过拟合检验）
         holdout_res = self._run_case(case_num, best_cfg, dataset_override=holdout_set) if best_cfg else None
         holdout_score = holdout_res["mean_composite"] if holdout_res else 0.0
