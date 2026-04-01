@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 import shutil
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -37,51 +39,88 @@ class RAGOptimizer:
         self.case_results: Dict[int, Dict[str, Any]] = {}
 
     def _iter_configs(self, max_trials: int) -> List[Dict[str, Any]]:
-        """生成候选配置列表。
-
-        策略：先对最重要的维度做完整笛卡尔积（primary grid），
-        再对次要维度做循环填充（cycling），保证即使 max_trials 较小
-        时也能覆盖到不同 retriever / chunk_strategy / chunk_size 组合。
-
-        Primary（逐一组合）：
-          retriever x chunk_strategy x chunk_size x answer_style x rerank_enabled
-          共 3x3x4x2x2 = 144 个主要组合，完整覆盖关键维度搜索空间。
-
-        Secondary（循环填充，不展开组合爆炸）：
-          embedding_model、metadata_filter_enabled、rewrite、decompose、
-          overlap_type、overlap_size、temperature、reranking_model
-        """
+        """生成候选配置列表（grid）。"""
         ss = self.config["search_space"]
 
-        # Primary grid: 最关键维度全量组合
         primary = list(itertools.product(
-            ss["retrieval"]["retriever"],     # bm25 / dense / hybrid
-            ss["chunking"]["strategy"],       # token / sentence / semantic
-            ss["chunking"]["size"],           # 128 / 256 / 384 / 512
-            ss["generation"]["answer_style"], # concise / citation_first
-            ss["reranking"]["enabled"],       # False / True
+            ss["retrieval"]["retriever"],
+            ss["chunking"]["strategy"],
+            ss["chunking"]["size"],
+            ss["generation"]["answer_style"],
+            ss["reranking"]["enabled"],
         ))
 
-        # Secondary: 次要维度按 cycle 补全
         from itertools import cycle as _cycle
-        emb_cyc  = _cycle(ss["retrieval"]["embedding_model"])
+        emb_cyc = _cycle(ss["retrieval"]["embedding_model"])
         mfil_cyc = _cycle(ss["retrieval"]["metadata_filter_enabled"])
-        rew_cyc  = _cycle(ss["query_processor"]["rewrite"])
-        dec_cyc  = _cycle(ss["query_processor"]["decompose"])
-        ovt_cyc  = _cycle(ss["chunking"]["overlap_type"])
-        ovs_cyc  = _cycle(ss["chunking"]["overlap_size"])
+        menr_cyc = _cycle(ss["retrieval"].get("metadata_enrichment", [True]))
+        rew_cyc = _cycle(ss["query_processor"]["rewrite"])
+        dec_cyc = _cycle(ss["query_processor"]["decompose"])
+        idf_cyc = _cycle(ss["query_processor"].get("intent_driven_filter", [False]))
+        ovt_cyc = _cycle(ss["chunking"]["overlap_type"])
+        ovs_cyc = _cycle(ss["chunking"]["overlap_size"])
         temp_cyc = _cycle(ss["generation"].get("temperature", [0.0]))
-        rm_cyc   = _cycle(ss["reranking"]["model"])
+        rm_cyc = _cycle(ss["reranking"]["model"])
 
         out: List[Dict[str, Any]] = []
-        for idx, (retriever, strategy, size, answer_style, rerank_en) in enumerate(primary):
+        for idx, (retriever, strategy, size, rerank_style, rerank_en) in enumerate(primary):
             out.append({
                 "config_id": f"cfg_{idx:05d}",
                 "retrieval": {
+                    "retriever": retriever,
+                    "embedding_model": next(emb_cyc),
+                    "metadata_filter_enabled": next(mfil_cyc),
+                    "metadata_enrichment": next(menr_cyc),
+                    "metadata_filter_fields": ss["retrieval"].get("metadata_filter_fields", ["section_title", "entities", "type"]),
+                },
+                "chunking": {
+                    "strategy": strategy,
+                    "size": size,
+                    "overlap_type": next(ovt_cyc),
+                    "overlap_size": next(ovs_cyc),
+                    "semantic_min_size": ss["chunking"]["semantic_min_size"][0],
+                    "semantic_max_size": ss["chunking"]["semantic_max_size"][0],
+                    "window_size": ss["chunking"].get("window_size", [3])[0],
+                    "similarity_threshold": ss["chunking"].get("similarity_threshold", [0.65])[0],
+                    "preserve_table_as_markdown": True,
+                    "generate_image_caption": False,
+                },
+                "generation": {
+                    "answer_style": rerank_style,
+                    "temperature": next(temp_cyc),
+                },
+                "reranking": {
+                    "enabled": rerank_en,
+                    "model": next(rm_cyc),
+                },
+                "query_processor": {
+                    "rewrite": next(rew_cyc),
+                    "decompose": next(dec_cyc),
+                    "intent_driven_filter": next(idf_cyc),
+                },
+            })
+            if len(out) >= max_trials:
+                break
+        return out
+
+    def _sample_config_by_trial(self, trial: Any) -> Dict[str, Any]:
+        """贝叶斯搜索时由 Optuna 采样一组配置。"""
+        ss = self.config["search_space"]
+        return {
+            "config_id": f"cfg_{trial.number:05d}",
+            "chunking": {
+                "strategy": trial.suggest_categorical("chunking_strategy", ss["chunking"]["strategy"]),
+                "size": trial.suggest_categorical("chunking_size", ss["chunking"]["size"]),
+                "overlap_type": trial.suggest_categorical("chunking_overlap_type", ss["chunking"]["overlap_type"]),
+                "overlap_size": trial.suggest_categorical("chunking_overlap_size", ss["chunking"]["overlap_size"]),
+                "semantic_min_size": trial.suggest_categorical("chunking_semantic_min_size", ss["chunking"]["semantic_min_size"]),
+                "semantic_max_size": trial.suggest_categorical("chunking_semantic_max_size", ss["chunking"]["semantic_max_size"]),
+            },
+            "retrieval": {
                 "retriever": trial.suggest_categorical("retrieval_retriever", ss["retrieval"]["retriever"]),
                 "embedding_model": trial.suggest_categorical("retrieval_embedding_model", ss["retrieval"]["embedding_model"]),
                 "metadata_filter_enabled": trial.suggest_categorical("retrieval_metadata_filter_enabled", ss["retrieval"]["metadata_filter_enabled"]),
-                "metadata_enrichment": True,
+                "metadata_enrichment": trial.suggest_categorical("retrieval_metadata_enrichment", ss["retrieval"].get("metadata_enrichment", [True])),
                 "metadata_filter_fields": ss["retrieval"].get("metadata_filter_fields", ["section_title", "entities", "type"]),
             },
             "query_processor": {
@@ -98,8 +137,6 @@ class RAGOptimizer:
                 "model": trial.suggest_categorical("reranking_model", ss["reranking"]["model"]),
             },
         }
-
-
 
     def _sample_random_config(self, trial_idx: int, seed: int = 42) -> Dict[str, Any]:
         """随机采样一组配置（random search 模式）。
@@ -126,7 +163,7 @@ class RAGOptimizer:
                 "retriever": retriever,
                 "embedding_model": _pick(ss["retrieval"]["embedding_model"]),
                 "metadata_filter_enabled": _pick(ss["retrieval"]["metadata_filter_enabled"]),
-                "metadata_enrichment": True,
+                "metadata_enrichment": _pick(ss["retrieval"].get("metadata_enrichment", [True])),
                 "metadata_filter_fields": ss["retrieval"].get(
                     "metadata_filter_fields", ["section_title", "entities", "type"]
                 ),
@@ -161,6 +198,13 @@ class RAGOptimizer:
     def _build_chunks(self, cfg: Dict[str, Any]):
         chunks = []
         for d in self.corpus:
+            base_metadata = {}
+            if bool(cfg["retrieval"].get("metadata_enrichment", False)):
+                base_metadata = {
+                    "title": d.get("title", ""),
+                    "source": d.get("source", ""),
+                    "page_number": d.get("page_number", None),
+                }
             chunks.extend(
                 chunk_document(
                     doc_id=d["doc_id"],
@@ -171,14 +215,34 @@ class RAGOptimizer:
                     overlap_size=cfg["chunking"]["overlap_size"],
                     semantic_min_size=cfg["chunking"]["semantic_min_size"],
                     semantic_max_size=cfg["chunking"]["semantic_max_size"],
-                    base_metadata={
-                        "title": d.get("title", ""),
-                        "source": d.get("source", ""),
-                        "page_number": d.get("page_number", None),
-                    },
+                    base_metadata=base_metadata,
                 )
             )
         return chunks
+
+    def _build_metadata_filter(self, query: str, cfg: Dict[str, Any], chunks: List[Any]) -> Dict[str, str]:
+        """基于配置字段从 query 中自动匹配 metadata 过滤条件。"""
+        if not cfg["retrieval"].get("metadata_filter_enabled", False):
+            return {}
+        if not cfg["retrieval"].get("metadata_enrichment", False):
+            return {}
+
+        fields = cfg["retrieval"].get("metadata_filter_fields", [])
+        q = query.lower()
+        out: Dict[str, str] = {}
+
+        for field in fields:
+            values = {
+                str(c.metadata.get(field, "")).strip()
+                for c in chunks
+                if str(c.metadata.get(field, "")).strip()
+            }
+            # 候选值按长度倒序，优先更具体短语
+            for val in sorted(values, key=len, reverse=True):
+                if val.lower() in q:
+                    out[field] = val
+                    break
+        return out
 
     def _split_dataset(self, dataset: list, holdout_ratio: float = 0.3, seed: int = 42) -> tuple:
         """将数据集按比例分为训练集和保留集，用于防止优化过拟合。"""
@@ -198,6 +262,7 @@ class RAGOptimizer:
             chunks,
             retriever_type=cfg["retrieval"]["retriever"],
             embedding_model=cfg["retrieval"].get("embedding_model", "tfidf"),
+            metadata_enrichment=bool(cfg["retrieval"].get("metadata_enrichment", False)),
         )
 
         per_query: List[Dict[str, Any]] = []
@@ -214,13 +279,7 @@ class RAGOptimizer:
                 per_query.append(cached)
                 continue
 
-            metadata_filter = {}
-            if cfg["retrieval"]["metadata_filter_enabled"]:
-                lowered = query.lower()
-                if "kyc" in lowered:
-                    metadata_filter = {"section_title": "kyc"}
-                elif "fee" in lowered:
-                    metadata_filter = {"section_title": "fee"}
+            metadata_filter = self._build_metadata_filter(query=query, cfg=cfg, chunks=chunks)
 
             retrieved = retriever.retrieve(query, top_k=self.top_k, metadata_filter=metadata_filter)
             # 查询改写/分解：对多个子查询分别检索后合并去重

@@ -124,15 +124,18 @@ class Retriever:
         chunks: List[Chunk],
         retriever_type: str = "hybrid",
         embedding_model: str = "bge-small",
+        metadata_enrichment: bool = True,
     ):
         self.chunks = chunks
         self.retriever_type = retriever_type
         self.embedding_model = embedding_model
+        self.metadata_enrichment = metadata_enrichment
 
-        # LightRAG 风格：构建索引时注入实体元数据
-        for chunk in self.chunks:
-            if "entities" not in chunk.metadata:
-                chunk.metadata["entities"] = _detect_entities(chunk.text)
+        # LightRAG 风格：按开关决定是否注入实体元数据
+        if self.metadata_enrichment:
+            for chunk in self.chunks:
+                if "entities" not in chunk.metadata:
+                    chunk.metadata["entities"] = _detect_entities(chunk.text)
 
         corpus_texts = [c.text for c in self.chunks] or [""]
 
