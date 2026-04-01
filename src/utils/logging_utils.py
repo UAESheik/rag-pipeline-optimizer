@@ -1,10 +1,24 @@
 from __future__ import annotations
 
-from pathlib import Path
+import json
+from datetime import datetime, timezone
+from typing import Any, Dict
 
 
-def append_jsonl(path: Path, line: str) -> None:
-    """向 jsonl 文件追加一行文本。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(line + "\n")
+def log_external_event(
+    component: str,
+    action: str,
+    status: str,
+    detail: str = "",
+    extra: Dict[str, Any] | None = None,
+) -> None:
+    """外部调用事件：运行时直接打印到终端，不写文件。"""
+    payload = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "component": component,
+        "action": action,
+        "status": status,
+        "detail": detail,
+        "extra": extra or {},
+    }
+    print(f"[external] {json.dumps(payload, ensure_ascii=False)}")
