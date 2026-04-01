@@ -4,21 +4,21 @@
 本项目通过统一优化框架，在 Case1（有监督）与 Case2（弱监督）下自动搜索并选择最优 RAG 配置，输出可解释的推荐结果。
 
 ## 2. Case1 推荐配置（有监督）
-- 配置ID：`cfg_00037`
-- 检索器：bm25
-- 分块策略：sentence / size=384
+- 配置ID：`cfg_00000`
+- 检索器：hybrid
+- 分块策略：token / size=128
 - 重排：False
-- 训练分数：0.8953，保留集分数：0.9532，过拟合差值：-0.0579
+- 训练分数：0.6503，保留集分数：0.8926，过拟合差值：-0.2423
 
 **推荐原因：**
 Case1 以 context_recall + answer_similarity + faithfulness 为目标，最优配置在训练集与保留集上表现稳定，说明在有参考答案场景下泛化较好。
 
 ## 3. Case2 推荐配置（弱监督）
-- 配置ID：`cfg_00016`
+- 配置ID：`cfg_00000`
 - 检索器：hybrid
-- 分块策略：token / size=256
-- 重排：True
-- 训练分数：0.74，保留集分数：0.8423，过拟合差值：-0.1023
+- 分块策略：token / size=128
+- 重排：False
+- 训练分数：0.7042，保留集分数：0.8423，过拟合差值：-0.1381
 
 **推荐原因：**
 Case2 无参考答案，优化目标切换为 retrieval_coverage_proxy + groundedness + citation_quality。该配置在弱监督代理指标下综合最优，且能够保持答案与检索证据的一致性。
@@ -28,10 +28,10 @@ Case2 无参考答案，优化目标切换为 retrieval_coverage_proxy + grounde
 |---|---|---|
 | 优化目标 | 提升答案与参考的一致性，同时保证证据支撑 | 在无参考答案条件下最大化证据覆盖与可溯源性 |
 | 核心指标 | context_recall / answer_similarity / faithfulness | retrieval_coverage_proxy / groundedness / citation_quality |
-| 推荐配置ID | cfg_00037 | cfg_00016 |
-| train_score | 0.8953 | 0.74 |
-| holdout_score | 0.9532 | 0.8423 |
-| overfit_gap | -0.0579 | -0.1023 |
+| 推荐配置ID | cfg_00000 | cfg_00000 |
+| train_score | 0.6503 | 0.7042 |
+| holdout_score | 0.8926 | 0.8423 |
+| overfit_gap | -0.2423 | -0.1381 |
 
 ## 5. Case1 到 Case2 的迁移优化思路
 - 保留 Case1 中已验证有效的结构化分块、检索与重排搜索空间；

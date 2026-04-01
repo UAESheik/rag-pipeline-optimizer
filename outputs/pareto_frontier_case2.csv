@@ -1,7 +1,2 @@
 config_id,mean_composite,trial_seconds,retriever,embedding_model,chunk_strategy,chunk_size,rerank_enabled
-cfg_00016,0.74,0.1321,hybrid,bge-small,token,256,True
-cfg_00013,0.7087,0.0277,bm25,e5-base,token,256,True
-cfg_00028,0.6775,0.0089,bm25,e5-base,sentence,512,False
-cfg_00004,0.5625,0.0065,bm25,bge-small,sentence,128,False
-cfg_00037,0.5312,0.004,bm25,bge-small,sentence,384,False
-cfg_00025,0.5244,0.0035,bm25,e5-base,token,512,False
+cfg_00000,0.7042,0.1486,hybrid,e5-base,token,128,False

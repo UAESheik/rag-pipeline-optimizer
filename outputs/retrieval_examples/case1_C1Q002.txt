@@ -1,3 +1,3 @@
 Query: When can a transaction monitoring alert be escalated?
 
-Retrieved: D005|D010|D001|D004|D009
+Retrieved: D005|D010|D001|D009|D007

@@ -1,7 +1,7 @@
 Query: What should a bank check before issuing provisional credit for a card dispute?
 
-Answer: [D002] [D003] [D006] [D007] [D008] For card disputes, provisional credit may be issued after intake if required evidence is received and fraud indicators are not contradictory. Chargeback windows vary by network.
+Answer: [D002] [D003] [D004] [D007] [D008] For card disputes, provisional credit may be issued after intake if required evidence is received and fraud indicators are not contradictory. Chargeback windows vary by network.
 
-Composite: 0.8266
+Composite: 0.7016
 Failure: 通过
 RAGChecker: 幻觉风险 medium: 无支撑 token 占比 0.227

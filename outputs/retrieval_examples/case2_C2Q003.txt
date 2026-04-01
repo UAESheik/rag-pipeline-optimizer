@@ -1,3 +1,3 @@
 Query: What should a bank check before issuing provisional credit for a card dispute?
 
-Retrieved: D007|D002|D003|D008|D006
+Retrieved: D007|D002|D008|D003|D004

@@ -1,50 +1,9 @@
 {
   "case1": {
-    "config_id": "cfg_00037",
-    "retrieval": {
-      "retriever": "bm25",
-      "embedding_model": "bge-small",
-      "metadata_filter_enabled": false,
-      "metadata_enrichment": true,
-      "metadata_filter_fields": [
-        "section_title",
-        "type"
-      ]
-    },
-    "chunking": {
-      "strategy": "sentence",
-      "size": 384,
-      "overlap_type": "token",
-      "overlap_size": 128,
-      "semantic_min_size": 350,
-      "semantic_max_size": 650,
-      "window_size": 5,
-      "similarity_threshold": 0.55,
-      "preserve_table_as_markdown": true,
-      "generate_image_caption": false
-    },
-    "generation": {
-      "answer_style": "concise",
-      "temperature": 0.2
-    },
-    "reranking": {
-      "enabled": false,
-      "model": "bge-reranker-base"
-    },
-    "query_processor": {
-      "rewrite": false,
-      "decompose": true,
-      "intent_driven_filter": true
-    },
-    "train_score": 0.8953,
-    "holdout_score": 0.9532,
-    "overfit_gap": -0.0579
-  },
-  "case2": {
-    "config_id": "cfg_00016",
+    "config_id": "cfg_00000",
     "retrieval": {
       "retriever": "hybrid",
-      "embedding_model": "bge-small",
+      "embedding_model": "e5-base",
       "metadata_filter_enabled": false,
       "metadata_enrichment": true,
       "metadata_filter_fields": [
@@ -54,31 +13,72 @@
     },
     "chunking": {
       "strategy": "token",
-      "size": 256,
+      "size": 128,
       "overlap_type": "token",
-      "overlap_size": 100,
+      "overlap_size": 64,
       "semantic_min_size": 350,
       "semantic_max_size": 650,
-      "window_size": 5,
-      "similarity_threshold": 0.65,
+      "window_size": 3,
+      "similarity_threshold": 0.55,
       "preserve_table_as_markdown": true,
       "generate_image_caption": false
     },
     "generation": {
       "answer_style": "citation_first",
-      "temperature": 0.2
+      "temperature": 0.0
     },
     "reranking": {
-      "enabled": true,
-      "model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
+      "enabled": false,
+      "model": "bge-reranker-base"
     },
     "query_processor": {
-      "rewrite": true,
+      "rewrite": false,
       "decompose": false,
       "intent_driven_filter": false
     },
-    "train_score": 0.74,
+    "train_score": 0.6503,
+    "holdout_score": 0.8926,
+    "overfit_gap": -0.2423
+  },
+  "case2": {
+    "config_id": "cfg_00000",
+    "retrieval": {
+      "retriever": "hybrid",
+      "embedding_model": "e5-base",
+      "metadata_filter_enabled": false,
+      "metadata_enrichment": true,
+      "metadata_filter_fields": [
+        "section_title",
+        "type"
+      ]
+    },
+    "chunking": {
+      "strategy": "token",
+      "size": 128,
+      "overlap_type": "token",
+      "overlap_size": 64,
+      "semantic_min_size": 350,
+      "semantic_max_size": 650,
+      "window_size": 3,
+      "similarity_threshold": 0.55,
+      "preserve_table_as_markdown": true,
+      "generate_image_caption": false
+    },
+    "generation": {
+      "answer_style": "citation_first",
+      "temperature": 0.0
+    },
+    "reranking": {
+      "enabled": false,
+      "model": "bge-reranker-base"
+    },
+    "query_processor": {
+      "rewrite": false,
+      "decompose": false,
+      "intent_driven_filter": false
+    },
+    "train_score": 0.7042,
     "holdout_score": 0.8423,
-    "overfit_gap": -0.1023
+    "overfit_gap": -0.1381
   }
 }

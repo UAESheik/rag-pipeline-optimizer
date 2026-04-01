@@ -1,7 +1,7 @@
 Query: When can a transaction monitoring alert be escalated?
 
-Answer: A transaction monitoring alert may be escalated when pattern scores exceed threshold, when sanctions-related entities are detected, or when structuring behavior is observed across linked accounts.
+Answer: [D001] [D005] [D007] [D009] [D010] A transaction monitoring alert may be escalated when pattern scores exceed threshold, when sanctions-related entities are detected, or when structuring behavior is observed across linked accounts.
 
-Composite: 0.8888
+Composite: 0.6647
 Failure: 通过
-RAGChecker: 无明显问题
+RAGChecker: 幻觉风险 medium: 无支撑 token 占比 0.2

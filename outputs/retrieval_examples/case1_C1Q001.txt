@@ -1,3 +1,3 @@
 Query: What is the KYC refresh interval for a standard-risk retail customer?
 
-Retrieved: D004|D001|D005|D009|D007
+Retrieved: D004|D001|D003|D007|D005

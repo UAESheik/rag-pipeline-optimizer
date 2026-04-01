@@ -1,3 +1,3 @@
 Query: What are the main fee-exemption conditions for Singapore savings accounts?
 
-Retrieved: D003|D007|D002|D009|D006
+Retrieved: D003|D009|D006|D007|D002
