@@ -35,15 +35,20 @@
   },
   "objective": {
     "case1_weights": {
-      "context_recall": 0.4,
-      "answer_similarity": 0.4,
-      "faithfulness": 0.2
+      "context_recall": 0.35,
+      "answer_similarity": 0.35,
+      "faithfulness": 0.2,
+      "answer_relevancy": 0.05,
+      "context_relevancy": 0.05
     },
     "case2_weights": {
-      "retrieval_coverage_proxy": 0.5,
+      "retrieval_coverage_proxy": 0.4,
       "groundedness": 0.3,
-      "citation_quality": 0.2
-    }
+      "citation_quality": 0.2,
+      "answer_relevancy": 0.05,
+      "context_relevancy": 0.05
+    },
+    "judge_weight": 0.03
   },
   "run": {
     "random_seed": 42,
@@ -54,6 +59,11 @@
     "use_ragas": true,
     "use_bertscore": true,
     "mlflow_enabled": true,
-    "use_llm_judge": true
+    "use_llm_judge": true,
+    "use_llm_generator": true,
+    "llm_model": "qwen2.5:7b-instruct",
+    "ragas_min_usage_threshold": 0.6,
+    "ragas_guard_mode": "invalid",
+    "ragas_guard_penalty": 0.2
   }
 }

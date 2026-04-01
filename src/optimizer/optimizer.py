@@ -78,71 +78,24 @@ class RAGOptimizer:
             out.append({
                 "config_id": f"cfg_{idx:05d}",
                 "retrieval": {
-                    "retriever": retriever,
-                    "embedding_model": next(emb_cyc),
-                    "metadata_filter_enabled": next(mfil_cyc),
-                    "metadata_enrichment": True,
-                    "metadata_filter_fields": ss["retrieval"].get(
-                        "metadata_filter_fields", ["section_title", "entities", "type"]
-                    ),
-                },
-                "chunking": {
-                    "strategy": strategy,
-                    "size": size,
-                    "overlap_type": next(ovt_cyc),
-                    "overlap_size": next(ovs_cyc),
-                    "semantic_min_size": ss["chunking"]["semantic_min_size"][0],
-                    "semantic_max_size": ss["chunking"]["semantic_max_size"][0],
-                    "window_size": ss["chunking"].get("window_size", [3])[0],
-                    "similarity_threshold": ss["chunking"].get("similarity_threshold", [0.65])[0],
-                    "preserve_table_as_markdown": True,
-                    "generate_image_caption": False,
-                },
-                "generation": {
-                    "answer_style": answer_style,
-                    "temperature": next(temp_cyc),
-                },
-                "reranking": {
-                    "enabled": rerank_en,
-                    "model": next(rm_cyc),
-                },
-                "query_processor": {
-                    "rewrite": next(rew_cyc),
-                    "decompose": next(dec_cyc),
-                    "intent_driven_filter": False,
-                },
-            })
-            if len(out) >= max_trials:
-                break
-        return out
-
-    def _sample_config_by_trial(self, trial: Any) -> Dict[str, Any]:
-        """贝叶斯搜索时由 Optuna 采样一组配置。"""
-        ss = self.config["search_space"]
-        return {
-            "config_id": f"cfg_{trial.number:05d}",
-            "chunking": {
-                "strategy": trial.suggest_categorical("chunking_strategy", ss["chunking"]["strategy"]),
-                "size": trial.suggest_categorical("chunking_size", ss["chunking"]["size"]),
-                "overlap_type": trial.suggest_categorical("chunking_overlap_type", ss["chunking"]["overlap_type"]),
-                "overlap_size": trial.suggest_categorical("chunking_overlap_size", ss["chunking"]["overlap_size"]),
-                "semantic_min_size": trial.suggest_categorical("chunking_semantic_min_size", ss["chunking"]["semantic_min_size"]),
-                "semantic_max_size": trial.suggest_categorical("chunking_semantic_max_size", ss["chunking"]["semantic_max_size"]),
-            },
-            "retrieval": {
                 "retriever": trial.suggest_categorical("retrieval_retriever", ss["retrieval"]["retriever"]),
                 "embedding_model": trial.suggest_categorical("retrieval_embedding_model", ss["retrieval"]["embedding_model"]),
                 "metadata_filter_enabled": trial.suggest_categorical("retrieval_metadata_filter_enabled", ss["retrieval"]["metadata_filter_enabled"]),
+                "metadata_enrichment": True,
+                "metadata_filter_fields": ss["retrieval"].get("metadata_filter_fields", ["section_title", "entities", "type"]),
             },
             "query_processor": {
                 "rewrite": trial.suggest_categorical("query_rewrite", ss["query_processor"]["rewrite"]),
                 "decompose": trial.suggest_categorical("query_decompose", ss["query_processor"]["decompose"]),
+                "intent_driven_filter": trial.suggest_categorical("query_intent_driven_filter", ss["query_processor"].get("intent_driven_filter", [False])),
             },
             "generation": {
                 "answer_style": trial.suggest_categorical("generation_answer_style", ss["generation"]["answer_style"]),
+                "temperature": trial.suggest_categorical("generation_temperature", ss["generation"].get("temperature", [0.0])),
             },
             "reranking": {
                 "enabled": trial.suggest_categorical("reranking_enabled", ss["reranking"]["enabled"]),
+                "model": trial.suggest_categorical("reranking_model", ss["reranking"]["model"]),
             },
         }
 
@@ -285,10 +238,35 @@ class RAGOptimizer:
                             seen_ids.add(chunk.chunk_id)
                 retrieved = sorted(retrieved, key=lambda x: x[1], reverse=True)[:self.top_k]
             retrieved = rerank(retrieved, enabled=cfg["reranking"]["enabled"], query=query)
-            answer = generate_answer(query, retrieved, cfg["generation"]["answer_style"])
-
+            answer = generate_answer(
+                query=query,
+                retrieved=retrieved,
+                answer_style=cfg["generation"]["answer_style"],
+                temperature=cfg["generation"].get("temperature", 0.0),
+                llm_model=str(self.config.get("run", {}).get("llm_model", "qwen2.5:7b-instruct")),
+                use_llm=bool(self.config.get("run", {}).get("use_llm_generator", True)),
+            )
             use_ragas = bool(self.config.get("run", {}).get("use_ragas", False))
             use_bertscore = bool(self.config.get("run", {}).get("use_bertscore", False))
+            case1_w = self.config.get(
+                "objective", {}
+            ).get("case1_weights", {
+                "context_recall": 0.35,
+                "answer_similarity": 0.35,
+                "faithfulness": 0.2,
+                "answer_relevancy": 0.05,
+                "context_relevancy": 0.05,
+            })
+            case2_w = self.config.get(
+                "objective", {}
+            ).get("case2_weights", {
+                "retrieval_coverage_proxy": 0.4,
+                "groundedness": 0.3,
+                "citation_quality": 0.2,
+                "answer_relevancy": 0.05,
+                "context_relevancy": 0.05,
+            })
+
             if case_num == 1:
                 ref_ctx = row.get("reference_relevant_context", "")
                 m = case1_metrics(
@@ -300,6 +278,7 @@ class RAGOptimizer:
                     query=query,
                     use_ragas=use_ragas,
                     use_bertscore=use_bertscore,
+                    weights=case1_w,
                 )
             else:
                 m = case2_metrics(
@@ -308,6 +287,7 @@ class RAGOptimizer:
                     reference_doc_ids=reference_ids,
                     query=query,
                     use_ragas=use_ragas,
+                    weights=case2_w,
                 )
 
             # RAGChecker 风格诊断 + Judge 接地性评分
@@ -317,6 +297,11 @@ class RAGOptimizer:
             judge_score = rc.get("judge", {}).get("judge_score", 0.0)
             judge_method = rc.get("judge", {}).get("judge_method", "token_coverage_proxy")
             judge_warning = rc.get("judge", {}).get("judge_warning", "")
+
+            judge_weight = float(self.config.get("objective", {}).get("judge_weight", 0.03))
+            m["composite_no_judge"] = float(m.get("composite", 0.0))
+            m["judge_weight"] = judge_weight
+            m["composite"] = round((1.0 - judge_weight) * float(m.get("composite", 0.0)) + judge_weight * float(judge_score), 4)
 
             result: Dict[str, Any] = {
                 "config_id": cfg["config_id"],
@@ -384,9 +369,28 @@ class RAGOptimizer:
                 t0 = time.perf_counter()
                 res = self._run_case(case_num, cfg, dataset_override=train_set)
                 trial_seconds = round(time.perf_counter() - t0, 4)
+                avg_ragas_used = round(
+                    sum(float(r.get("ragas_used", 0.0)) for r in res["per_query"]) / max(1, len(res["per_query"])), 4
+                )
+                use_ragas = bool(self.config.get("run", {}).get("use_ragas", False))
+                ragas_min_usage_threshold = float(self.config.get("run", {}).get("ragas_min_usage_threshold", 0.6))
+                guard_mode = str(self.config.get("run", {}).get("ragas_guard_mode", "invalid")).lower()
+                guard_penalty = float(self.config.get("run", {}).get("ragas_guard_penalty", 0.2))
+                signal_guard_triggered = use_ragas and (avg_ragas_used < ragas_min_usage_threshold)
+
+                guarded_score = float(res["mean_composite"])
+                if signal_guard_triggered:
+                    if guard_mode == "invalid":
+                        guarded_score = -1.0
+                    else:
+                        guarded_score = round(guarded_score * guard_penalty, 4)
+
                 row = {
                     "config_id": cfg["config_id"],
-                    "mean_composite": res["mean_composite"],
+                    "mean_composite": guarded_score,
+                    "raw_mean_composite": res["mean_composite"],
+                    "avg_ragas_used": avg_ragas_used,
+                    "signal_guard_triggered": str(signal_guard_triggered),
                     "trial_seconds": trial_seconds,
                     "retriever": cfg["retrieval"]["retriever"],
                     "embedding_model": cfg["retrieval"].get("embedding_model", "tfidf"),
@@ -395,12 +399,12 @@ class RAGOptimizer:
                     "rerank_enabled": cfg["reranking"]["enabled"],
                 }
                 run_summary_rows.append(row)
-                if res["mean_composite"] > best_score:
-                    best_score = res["mean_composite"]
+                if guarded_score > best_score:
+                    best_score = guarded_score
                     best_cfg = cfg
                     best_per_query = res["per_query"]
                     all_ragchecker = res["ragchecker_findings"]
-                return float(res["mean_composite"])
+                return float(guarded_score)
 
             study.optimize(objective, n_trials=max_trials)
         else:
@@ -408,9 +412,28 @@ class RAGOptimizer:
                 t0 = time.perf_counter()
                 res = self._run_case(case_num, cfg, dataset_override=train_set)
                 trial_seconds = round(time.perf_counter() - t0, 4)
+                avg_ragas_used = round(
+                    sum(float(r.get("ragas_used", 0.0)) for r in res["per_query"]) / max(1, len(res["per_query"])), 4
+                )
+                use_ragas = bool(self.config.get("run", {}).get("use_ragas", False))
+                ragas_min_usage_threshold = float(self.config.get("run", {}).get("ragas_min_usage_threshold", 0.6))
+                guard_mode = str(self.config.get("run", {}).get("ragas_guard_mode", "invalid")).lower()
+                guard_penalty = float(self.config.get("run", {}).get("ragas_guard_penalty", 0.2))
+                signal_guard_triggered = use_ragas and (avg_ragas_used < ragas_min_usage_threshold)
+
+                guarded_score = float(res["mean_composite"])
+                if signal_guard_triggered:
+                    if guard_mode == "invalid":
+                        guarded_score = -1.0
+                    else:
+                        guarded_score = round(guarded_score * guard_penalty, 4)
+
                 row = {
                     "config_id": cfg["config_id"],
-                    "mean_composite": res["mean_composite"],
+                    "mean_composite": guarded_score,
+                    "raw_mean_composite": res["mean_composite"],
+                    "avg_ragas_used": avg_ragas_used,
+                    "signal_guard_triggered": str(signal_guard_triggered),
                     "trial_seconds": trial_seconds,
                     "retriever": cfg["retrieval"]["retriever"],
                     "embedding_model": cfg["retrieval"].get("embedding_model", "tfidf"),
@@ -419,8 +442,8 @@ class RAGOptimizer:
                     "rerank_enabled": cfg["reranking"]["enabled"],
                 }
                 run_summary_rows.append(row)
-                if res["mean_composite"] > best_score:
-                    best_score = res["mean_composite"]
+                if guarded_score > best_score:
+                    best_score = guarded_score
                     best_cfg = cfg
                     best_per_query = res["per_query"]
                     all_ragchecker = res["ragchecker_findings"]
@@ -455,7 +478,7 @@ class RAGOptimizer:
         write_csv(
             run_summary_path,
             run_rows_with_case,
-            ["case_num", "config_id", "mean_composite", "trial_seconds", "retriever", "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled"],
+            ["case_num", "config_id", "mean_composite", "raw_mean_composite", "avg_ragas_used", "signal_guard_triggered", "trial_seconds", "retriever", "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled"],
         )
 
         # 多目标 Pareto 分析（AutoRAG 风格：质量 vs 延迟权衡，默认启用）
@@ -486,7 +509,7 @@ class RAGOptimizer:
         write_csv(
             pareto_csv_path,
             pareto_rows,
-            ["config_id", "mean_composite", "trial_seconds", "retriever",
+            ["config_id", "mean_composite", "raw_mean_composite", "avg_ragas_used", "signal_guard_triggered", "trial_seconds", "retriever",
              "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled"],
         )
         self._write_pareto_plot(out_dir, pareto_rows, case_num)
@@ -507,7 +530,7 @@ class RAGOptimizer:
                 "config_id", "query_id", "query", "retrieved_doc_ids", "answer",
                 "composite", "context_recall", "answer_similarity", "faithfulness",
                 "retrieval_coverage_proxy", "groundedness", "citation_quality",
-                "answer_relevancy", "context_relevancy",
+                "answer_relevancy", "context_relevancy", "ragas_used", "signal_quality", "composite_no_judge", "judge_weight",
                 "failure_reason", "ragchecker_findings", "hallucination_risk",
                 "retrieval_bias", "query_drift",
                 "judge_score", "judge_method", "judge_warning",
