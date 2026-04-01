@@ -114,7 +114,7 @@ def judge_groundedness_score(
             "judge_warning": "未启用 LLM judge，使用代理评分",
         }
 
-    model = os.getenv("RAG_OPT_JUDGE_MODEL", os.getenv("RAG_OPT_LLM_MODEL", "qwen2.5:7b-instruct"))
+    model = os.getenv("RAG_OPT_JUDGE_MODEL", os.getenv("RAG_OPT_LLM_MODEL", "qwen2.5:3b-instruct"))
     prompt = _judge_prompt(query, answer, retrieved)
     try:
         score = _call_judge_ollama(prompt=prompt, model=model)

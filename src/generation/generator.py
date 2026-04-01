@@ -50,7 +50,7 @@ def generate_answer(
     retrieved: List[RetrievedChunk],
     answer_style: str = "concise",
     temperature: float = 0.0,
-    llm_model: str = "qwen2.5:7b-instruct",
+    llm_model: str = "qwen2.5:3b-instruct",
     use_llm: bool = True,
 ) -> str:
     """基于检索上下文生成答案（真实调用优先，失败回退抽取式）。"""
