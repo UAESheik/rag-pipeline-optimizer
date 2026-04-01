@@ -416,6 +416,7 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 - `_detect_entities()`：构建索引时检测领域关键词，注入 `chunk.metadata["entities"]`
 - `_DOMAIN_ENTITIES` 词典：覆盖 kyc/aml/fee/credit/fraud/sanctions/pii 等金融实体
 - `retrieve()` metadata_filter：支持按实体类别过滤候选集，模拟图谱关联查询入口
+- `optimizer.py` 中 metadata_filter 已改为字段感知规则：根据 `metadata_filter_fields` 从 query 自动匹配候选 metadata 值（非 kyc/fee 硬编码）
 - 生产替换：将 `_detect_entities()` 换为 spaCy / transformers NER，接口不变
 
 ### 9.5 裁判模型（LLM-as-Judge）接地性检查
@@ -423,17 +424,15 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 **已在代码中实现（`src/evaluation/diagnostics.py`）：**
 
 - `judge_groundedness_score()`：统一接地性评分接口，**真实 LLM 调用优先，代理评分兜底**
-- 支持两类 provider：
-  - `ollama`：免费开源本地模型
-  - `openai`：OpenAI 兼容接口
+- 当前默认 provider：`ollama`（免费开源本地模型）
 - 输出到 `per_query_diagnostics.csv`：`judge_score` / `judge_method` / `judge_warning`
-- 所有外部调用写入 `outputs/external_calls.jsonl`，可观测 `start/success/fallback/error`
+- 外部调用事件在运行时直接输出到终端（`start/success/fallback`）
 
 **防止“虚假信号”说明：**
 
 - `metrics.py` 新增 `signal_quality`，用于标记真实评估信号占比
-- 当 RAGAS/BERTScore 等真实信号不可用时，`composite` 会自动施加 `signal_penalty`，避免优化器过拟合代理指标
-- 因此，最终排序是“任务指标 × 信号质量约束”，比单纯 token overlap 更稳健
+- `optimizer.py` 新增 signal guard：当 `ragas_used` 低于阈值可直接判无效或强惩罚
+- 当全部 trial 被 guard 判无效时，自动回退到 `raw_mean_composite` 最优配置，保证报告可读性
 
 ---
 
