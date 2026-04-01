@@ -682,7 +682,12 @@ class RAGOptimizer:
             ["config_id", "mean_composite", "trial_seconds", "retriever",
              "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled", *metric_cols],
         )
-        self._write_pareto_plot(out_dir, pareto_rows, case_num)
+        self._write_pareto_plot(
+            out_dir,
+            run_summary_rows,
+            case_num,
+            frontier_config_ids={str(r.get("config_id", "")) for r in pareto_rows},
+        )
 
         if bool(self.config.get("run", {}).get("mlflow_enabled", False)):
             self._log_mlflow_case(
@@ -740,14 +745,18 @@ class RAGOptimizer:
         self._active_case_num = None
 
 
-    def _write_pareto_plot(self, out_dir: Path, rows: List[Dict[str, Any]], case_num: int) -> None:
+    def _write_pareto_plot(
+        self,
+        out_dir: Path,
+        rows: List[Dict[str, Any]],
+        case_num: int,
+        frontier_config_ids: set[str] | None = None,
+    ) -> None:
         """
-        输出 Pareto 散点图（质量 vs 延迟），含以下增强可视化：
-        - 每个点标注 config_id
-        - 颜色映射 mean_composite 高低（越黄越优）
+        输出质量-延迟散点图：
+        - 全部 trial 点（避免图上只有 1 个 Pareto 点）
+        - Pareto 前沿点高亮
         - 标注最优质量点（Best Quality）与最低延迟点（Fastest）
-        - 横轴/纵轴带参考线（均值）
-        - 图注说明 Pareto 前沿含义
         """
         if not rows:
             return
@@ -755,7 +764,6 @@ class RAGOptimizer:
             import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
-            import matplotlib.cm as cm
             import numpy as np
 
             xs = [float(r["trial_seconds"]) for r in rows]
@@ -764,35 +772,88 @@ class RAGOptimizer:
             retrievers = [str(r.get("retriever", "")) for r in rows]
             chunks = [f"{r.get('chunk_strategy','')}/{r.get('chunk_size','')}" for r in rows]
 
-            # 颜色映射：quality 越高越黄
-            norm = plt.Normalize(min(ys), max(ys))
-            colors = cm.RdYlGn(norm(ys))
-
             fig, ax = plt.subplots(figsize=(9, 5.5))
-            sc = ax.scatter(xs, ys, c=ys, cmap="RdYlGn", s=80, zorder=3,
-                            vmin=min(ys), vmax=max(ys), edgecolors="#333", linewidths=0.5)
+
+            # 全量 trial 点（主图层）
+            sc = ax.scatter(
+                xs,
+                ys,
+                c=ys,
+                cmap="RdYlGn",
+                s=70,
+                zorder=2,
+                vmin=min(ys),
+                vmax=max(ys),
+                edgecolors="#333",
+                linewidths=0.4,
+                alpha=0.85,
+            )
             plt.colorbar(sc, ax=ax, label="mean_composite (quality)")
 
-            # 标注每个点
-            for x, y, lab, ret, chk in zip(xs, ys, labels, retrievers, chunks):
+            # Pareto 前沿点高亮（可选）
+            frontier_config_ids = frontier_config_ids or set()
+            if frontier_config_ids:
+                fx, fy = [], []
+                for r in rows:
+                    if str(r.get("config_id", "")) in frontier_config_ids:
+                        fx.append(float(r["trial_seconds"]))
+                        fy.append(float(r["mean_composite"]))
+                if fx:
+                    ax.scatter(
+                        fx,
+                        fy,
+                        s=130,
+                        facecolors="none",
+                        edgecolors="black",
+                        linewidths=1.2,
+                        zorder=4,
+                        label="Pareto frontier",
+                    )
+
+            # 标签降噪：仅标注 Pareto 前沿点 + TopK 质量点 + 最快点
+            top_k_labels = 8
+            top_quality_indices = sorted(range(len(ys)), key=lambda i: ys[i], reverse=True)[:top_k_labels]
+            frontier_indices = {
+                i for i, r in enumerate(rows)
+                if str(r.get("config_id", "")) in frontier_config_ids
+            }
+            best_t_idx = int(np.argmin(xs))
+            label_indices = set(top_quality_indices) | frontier_indices | {best_t_idx}
+
+            for i in sorted(label_indices):
+                x, y = xs[i], ys[i]
+                lab, ret, chk = labels[i], retrievers[i], chunks[i]
                 ax.annotate(
                     f"{lab}\n{ret}|{chk}",
                     (x, y),
                     textcoords="offset points",
                     xytext=(6, 4),
-                    fontsize=6.5,
-                    color="#333",
+                    fontsize=6.8,
+                    color="#222",
                 )
 
             # 标注最优质量点
             best_q_idx = int(np.argmax(ys))
-            ax.scatter([xs[best_q_idx]], [ys[best_q_idx]], s=180, marker="*",
-                       color="gold", zorder=5, label=f"Best Quality: {labels[best_q_idx]}")
+            ax.scatter(
+                [xs[best_q_idx]],
+                [ys[best_q_idx]],
+                s=180,
+                marker="*",
+                color="gold",
+                zorder=5,
+                label=f"Best Quality: {labels[best_q_idx]}",
+            )
 
             # 标注最快点
-            best_t_idx = int(np.argmin(xs))
-            ax.scatter([xs[best_t_idx]], [ys[best_t_idx]], s=120, marker="D",
-                       color="steelblue", zorder=5, label=f"Fastest: {labels[best_t_idx]}")
+            ax.scatter(
+                [xs[best_t_idx]],
+                [ys[best_t_idx]],
+                s=120,
+                marker="D",
+                color="steelblue",
+                zorder=5,
+                label=f"Fastest: {labels[best_t_idx]}",
+            )
 
             # 均值参考线
             ax.axhline(np.mean(ys), color="gray", linestyle="--", linewidth=0.8, alpha=0.6, label="Avg quality")
