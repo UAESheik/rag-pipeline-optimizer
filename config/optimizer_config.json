@@ -24,8 +24,8 @@
       "model": ["bge-reranker-base", "cross-encoder/ms-marco-MiniLM-L-6-v2"]
     },
     "query_processor": {
-      "rewrite": [false, true],
-      "decompose": [false, true],
+      "rewrite": [false],
+      "decompose": [false],
       "intent_driven_filter": [false, true]
     },
     "generation": {
@@ -35,25 +35,25 @@
   },
   "objective": {
     "case1_weights": {
-      "context_recall": 0.42,
-      "answer_similarity": 0.32,
-      "faithfulness": 0.24,
-      "answer_relevancy": 0.01,
+      "context_recall": 0.4,
+      "answer_similarity": 0.45,
+      "faithfulness": 0.12,
+      "answer_relevancy": 0.02,
       "context_relevancy": 0.01
     },
     "case2_weights": {
-      "retrieval_coverage_proxy": 0.1,
-      "groundedness": 0.5,
-      "citation_quality": 0.35,
-      "answer_relevancy": 0.03,
-      "context_relevancy": 0.02
+      "retrieval_coverage_proxy": 0.75,
+      "groundedness": 0.2,
+      "citation_quality": 0.02,
+      "answer_relevancy": 0.02,
+      "context_relevancy": 0.01
     },
     "judge_weight": 0.01
   },
   "run": {
     "random_seed": 42,
-    "max_trials": 80,
-    "top_k": 6,
+    "max_trials": 60,
+    "top_k": 8,
     "cache_enabled": false,
     "search_method": "bayes",
     "use_bertscore": true,
