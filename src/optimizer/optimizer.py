@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import math
 import os
 import shutil
 import time
@@ -283,6 +284,65 @@ class RAGOptimizer:
         out["llm_generator"] = bool(self.config.get("run", {}).get("use_llm_generator", False)) and ollama_ok
         return out
 
+    @staticmethod
+    def _spearman_corr(xs: List[float], ys: List[float]) -> float:
+        n = min(len(xs), len(ys))
+        if n < 2:
+            return 0.0
+
+        def _ranks(vals: List[float]) -> List[float]:
+            pairs = sorted(enumerate(vals), key=lambda t: t[1])
+            ranks = [0.0] * len(vals)
+            i = 0
+            while i < len(pairs):
+                j = i
+                while j + 1 < len(pairs) and pairs[j + 1][1] == pairs[i][1]:
+                    j += 1
+                avg_rank = (i + j) / 2.0 + 1.0
+                for k in range(i, j + 1):
+                    ranks[pairs[k][0]] = avg_rank
+                i = j + 1
+            return ranks
+
+        rx = _ranks(xs[:n])
+        ry = _ranks(ys[:n])
+        mx = sum(rx) / n
+        my = sum(ry) / n
+        cov = sum((a - mx) * (b - my) for a, b in zip(rx, ry))
+        vx = sum((a - mx) ** 2 for a in rx)
+        vy = sum((b - my) ** 2 for b in ry)
+        if vx <= 0 or vy <= 0:
+            return 0.0
+        return float(max(-1.0, min(1.0, cov / math.sqrt(vx * vy))))
+
+    def _write_metric_sanity_check(self, out_dir: Path, case_num: int, rows: List[Dict[str, Any]]) -> None:
+        if not rows:
+            return
+
+        cols = [
+            "composite", "context_recall", "answer_similarity", "faithfulness",
+            "retrieval_coverage_proxy", "groundedness", "citation_quality",
+            "answer_relevancy", "context_relevancy", "judge_score",
+        ]
+        composite_vals = [float(r.get("composite", 0.0)) for r in rows]
+        table: List[Dict[str, Any]] = []
+        for c in cols:
+            metric_vals = [float(r.get(c, 0.0)) for r in rows]
+            table.append({
+                "case_num": case_num,
+                "metric": c,
+                "spearman_vs_composite": round(self._spearman_corr(metric_vals, composite_vals), 4),
+                "mean": round(sum(metric_vals) / max(1, len(metric_vals)), 4),
+                "min": round(min(metric_vals), 4),
+                "max": round(max(metric_vals), 4),
+            })
+
+        write_csv(
+            out_dir / f"metric_sanity_case{case_num}.csv",
+            table,
+            ["case_num", "metric", "spearman_vs_composite", "mean", "min", "max"],
+        )
+
     def _run_case(self, case_num: int, cfg: Dict[str, Any], dataset_override: list | None = None) -> Dict[str, Any]:
         dataset = dataset_override if dataset_override is not None else (self.case1 if case_num == 1 else self.case2)
         chunks = self._build_chunks(cfg)
@@ -330,10 +390,9 @@ class RAGOptimizer:
                 retrieved=retrieved,
                 answer_style=cfg["generation"]["answer_style"],
                 temperature=cfg["generation"].get("temperature", 0.0),
-                llm_model=str(self.config.get("run", {}).get("llm_model", "qwen2.5:7b-instruct")),
+                llm_model=str(self.config.get("run", {}).get("llm_model", "qwen2.5:3b-instruct")),
                 use_llm=bool(self.config.get("run", {}).get("use_llm_generator", True)),
             )
-            use_ragas = bool(self.config.get("run", {}).get("use_ragas", False))
             use_bertscore = bool(self.config.get("run", {}).get("use_bertscore", False))
             case1_w = self.config.get(
                 "objective", {}
@@ -363,7 +422,6 @@ class RAGOptimizer:
                     reference_doc_ids=reference_ids,
                     reference_context=ref_ctx,
                     query=query,
-                    use_ragas=use_ragas,
                     use_bertscore=use_bertscore,
                     weights=case1_w,
                 )
@@ -373,7 +431,6 @@ class RAGOptimizer:
                     answer=answer,
                     reference_doc_ids=reference_ids,
                     query=query,
-                    use_ragas=use_ragas,
                     weights=case2_w,
                 )
 
@@ -442,6 +499,17 @@ class RAGOptimizer:
         best_per_query: List[Dict[str, Any]] = []
         all_ragchecker: List[str] = []
 
+        metric_cols = [
+            "context_recall", "answer_similarity", "faithfulness",
+            "retrieval_coverage_proxy", "groundedness", "citation_quality",
+            "answer_relevancy", "context_relevancy", "signal_quality",
+            "composite_no_judge", "judge_score",
+        ]
+
+        def _avg_metric(rows: List[Dict[str, Any]], key: str) -> float:
+            vals = [float(r.get(key, 0.0)) for r in rows if r.get(key, "") not in ("", None)]
+            return round(sum(vals) / max(1, len(vals)), 4) if vals else 0.0
+
         # 在训练集上搜索最优配置
         if method == "bayes":
             import optuna
@@ -456,34 +524,18 @@ class RAGOptimizer:
                 t0 = time.perf_counter()
                 res = self._run_case(case_num, cfg, dataset_override=train_set)
                 trial_seconds = round(time.perf_counter() - t0, 4)
-                avg_ragas_used = round(
-                    sum(float(r.get("ragas_used", 0.0)) for r in res["per_query"]) / max(1, len(res["per_query"])), 4
-                )
-                use_ragas = bool(self.config.get("run", {}).get("use_ragas", False))
-                ragas_min_usage_threshold = float(self.config.get("run", {}).get("ragas_min_usage_threshold", 0.6))
-                guard_mode = str(self.config.get("run", {}).get("ragas_guard_mode", "invalid")).lower()
-                guard_penalty = float(self.config.get("run", {}).get("ragas_guard_penalty", 0.2))
-                signal_guard_triggered = use_ragas and (avg_ragas_used < ragas_min_usage_threshold)
-
                 guarded_score = float(res["mean_composite"])
-                if signal_guard_triggered:
-                    if guard_mode == "invalid":
-                        guarded_score = -1.0
-                    else:
-                        guarded_score = round(guarded_score * guard_penalty, 4)
 
                 row = {
                     "config_id": cfg["config_id"],
                     "mean_composite": guarded_score,
-                    "raw_mean_composite": res["mean_composite"],
-                    "avg_ragas_used": avg_ragas_used,
-                    "signal_guard_triggered": str(signal_guard_triggered),
                     "trial_seconds": trial_seconds,
                     "retriever": cfg["retrieval"]["retriever"],
                     "embedding_model": cfg["retrieval"].get("embedding_model", "tfidf"),
                     "chunk_strategy": cfg["chunking"]["strategy"],
                     "chunk_size": cfg["chunking"]["size"],
                     "rerank_enabled": cfg["reranking"]["enabled"],
+                    **{k: _avg_metric(res["per_query"], k) for k in metric_cols},
                 }
                 run_summary_rows.append(row)
                 if guarded_score > best_score:
@@ -499,34 +551,18 @@ class RAGOptimizer:
                 t0 = time.perf_counter()
                 res = self._run_case(case_num, cfg, dataset_override=train_set)
                 trial_seconds = round(time.perf_counter() - t0, 4)
-                avg_ragas_used = round(
-                    sum(float(r.get("ragas_used", 0.0)) for r in res["per_query"]) / max(1, len(res["per_query"])), 4
-                )
-                use_ragas = bool(self.config.get("run", {}).get("use_ragas", False))
-                ragas_min_usage_threshold = float(self.config.get("run", {}).get("ragas_min_usage_threshold", 0.6))
-                guard_mode = str(self.config.get("run", {}).get("ragas_guard_mode", "invalid")).lower()
-                guard_penalty = float(self.config.get("run", {}).get("ragas_guard_penalty", 0.2))
-                signal_guard_triggered = use_ragas and (avg_ragas_used < ragas_min_usage_threshold)
-
                 guarded_score = float(res["mean_composite"])
-                if signal_guard_triggered:
-                    if guard_mode == "invalid":
-                        guarded_score = -1.0
-                    else:
-                        guarded_score = round(guarded_score * guard_penalty, 4)
 
                 row = {
                     "config_id": cfg["config_id"],
                     "mean_composite": guarded_score,
-                    "raw_mean_composite": res["mean_composite"],
-                    "avg_ragas_used": avg_ragas_used,
-                    "signal_guard_triggered": str(signal_guard_triggered),
                     "trial_seconds": trial_seconds,
                     "retriever": cfg["retrieval"]["retriever"],
                     "embedding_model": cfg["retrieval"].get("embedding_model", "tfidf"),
                     "chunk_strategy": cfg["chunking"]["strategy"],
                     "chunk_size": cfg["chunking"]["size"],
                     "rerank_enabled": cfg["reranking"]["enabled"],
+                    **{k: _avg_metric(res["per_query"], k) for k in metric_cols},
                 }
                 run_summary_rows.append(row)
                 if guarded_score > best_score:
@@ -536,7 +572,7 @@ class RAGOptimizer:
                     all_ragchecker = res["ragchecker_findings"]
 
         if (not best_cfg) and run_summary_rows:
-            fallback_row = max(run_summary_rows, key=lambda r: float(r.get("raw_mean_composite", r.get("mean_composite", -1.0))))
+            fallback_row = max(run_summary_rows, key=lambda r: float(r.get("mean_composite", -1.0)))
             fallback_id = str(fallback_row.get("config_id", ""))
             candidates = configs if method != "bayes" else []
             for cfg_candidate in candidates:
@@ -580,7 +616,7 @@ class RAGOptimizer:
         write_csv(
             run_summary_path,
             run_rows_with_case,
-            ["case_num", "config_id", "mean_composite", "raw_mean_composite", "avg_ragas_used", "signal_guard_triggered", "trial_seconds", "retriever", "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled"],
+            ["case_num", "config_id", "mean_composite", "trial_seconds", "retriever", "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled", *metric_cols],
         )
 
         # 多目标 Pareto 分析（AutoRAG 风格：质量 vs 延迟权衡，默认启用）
@@ -611,8 +647,8 @@ class RAGOptimizer:
         write_csv(
             pareto_csv_path,
             pareto_rows,
-            ["config_id", "mean_composite", "raw_mean_composite", "avg_ragas_used", "signal_guard_triggered", "trial_seconds", "retriever",
-             "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled"],
+            ["config_id", "mean_composite", "trial_seconds", "retriever",
+             "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled", *metric_cols],
         )
         self._write_pareto_plot(out_dir, pareto_rows, case_num)
 
@@ -632,7 +668,7 @@ class RAGOptimizer:
                 "config_id", "query_id", "query", "retrieved_doc_ids", "answer",
                 "composite", "context_recall", "answer_similarity", "faithfulness",
                 "retrieval_coverage_proxy", "groundedness", "citation_quality",
-                "answer_relevancy", "context_relevancy", "ragas_used", "signal_quality", "composite_no_judge", "judge_weight",
+                "answer_relevancy", "context_relevancy", "signal_quality", "composite_no_judge", "judge_weight",
                 "failure_reason", "ragchecker_findings", "hallucination_risk",
                 "retrieval_bias", "query_drift",
                 "judge_score", "judge_method", "judge_warning",
@@ -647,6 +683,7 @@ class RAGOptimizer:
                 diag_rows_with_case = prev_diag + diag_rows_with_case
 
             write_csv(per_query_path, diag_rows_with_case, ["case_num", *diag_fields])
+            self._write_metric_sanity_check(out_dir, case_num, best_per_query)
 
             for r in best_per_query:
                 (out_dir / "retrieval_examples" / f"case{case_num}_{r['query_id']}.txt").write_text(

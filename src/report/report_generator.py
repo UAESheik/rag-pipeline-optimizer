@@ -43,7 +43,8 @@ def generate_final_report(
     report = (
         "# RAG 优化器最终报告\n\n"
         "## 1. 项目目标\n"
-        "本项目通过统一优化框架，在 Case1（有监督）与 Case2（弱监督）下自动搜索并选择最优 RAG 配置，输出可解释的推荐结果。\n\n"
+        "本项目通过统一优化框架，在 Case1（有监督）与 Case2（弱监督）下自动搜索并选择最优 RAG 配置，"
+        "基于本地代码指标输出可解释的推荐结果。\n\n"
         "## 2. Case1 推荐配置（有监督）\n"
         f"- 配置ID：`{c1_cfg.get('config_id', 'N/A')}`\n"
         f"- 检索器：{c1_cfg.get('retrieval', {}).get('retriever', 'N/A')}\n"
@@ -53,6 +54,7 @@ def generate_final_report(
         f"- 训练分数：{c1_train}，保留集分数：{c1_holdout}，过拟合差值：{c1_gap}\n\n"
         "**推荐原因：**\n"
         "Case1 以 context_recall + answer_similarity + faithfulness 为目标，"
+        "并用本地代码代理指标约束答案相关性与上下文相关性，"
         "最优配置在训练集与保留集上表现稳定，说明在有参考答案场景下泛化较好。\n\n"
         "## 3. Case2 推荐配置（弱监督）\n"
         f"- 配置ID：`{c2_cfg.get('config_id', 'N/A')}`\n"
