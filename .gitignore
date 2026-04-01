@@ -24,6 +24,7 @@ htmlcov/
 
 # Outputs (generated at runtime, not committed)
 outputs/.cache/
+outputs/mlflow.db
 
 # MLflow
 mlruns/

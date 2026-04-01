@@ -153,7 +153,7 @@ flowchart LR
 | 重排   | cross-encoder 可配置                    | `src/retrieval/reranker.py`        | —                                                |
 | 查询改写 | expand / decompose / HyDE            | `src/retrieval/query_processor.py` | **DSPy**：`QuerySignature`+`QueryModule` 声明式结构    |
 | 生成   | concise / citation_first 两种模式        | `src/generation/generator.py`      | —                                                |
-| 指标评估 | Case1/Case2 双场景，支持 BERTScore/RAGAS   | `src/evaluation/metrics.py`        | —                                                |
+| 指标评估 | Case1/Case2 双场景，支持 BERTScore + 代码代理指标 | `src/evaluation/metrics.py`        | —                                                |
 | 诊断分析 | RAGChecker 风格三项诊断 + LLM-as-Judge 接地性 | `src/evaluation/diagnostics.py`    | **LightRAG**：实体元数据注入 `_detect_entities()`        |
 | 优化循环 | 搜索空间枚举 + Pareto 多目标分析                | `src/optimizer/optimizer.py`       | **AutoRAG**：`_iter_configs()`/`_run_case()` 评估闭环 |
 
@@ -251,7 +251,7 @@ python main.py --max-trials 10
 
 ```bash
 # 本地 Ollama
-set RAG_OPT_LLM_MODEL=qwen2.5:7b-instruct
+set RAG_OPT_LLM_MODEL=qwen2.5:3b-instruct
 set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 ```
 
@@ -296,12 +296,10 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 
 - `run.search_method`：`grid` / `random` / `bayes`
 - `run.cache_enabled`：是否启用缓存
-- `run.use_ragas` / `run.use_bertscore` / `run.use_llm_judge` / `run.use_llm_generator`：是否启用增强评估与生成
-- `run.mlflow_tracking_uri`：MLflow Tracking URI（建议 `sqlite:///outputs/mlflow.db`，避免 filesystem backend 弃用警告）
-- `run.llm_model`：模型名称（如 `qwen2.5:7b-instruct`）
-- `run.ragas_min_usage_threshold`：RAGAS 有效使用率阈值（低于阈值触发信号守卫）
-- `run.ragas_guard_mode`：`invalid`（trial 直接无效）或 `penalty`（强惩罚）
-- `run.ragas_guard_penalty`：`penalty` 模式下的降权系数
+- `run.use_bertscore` / `run.use_llm_judge` / `run.use_llm_generator`：是否启用增强评估与生成
+- `run.mlflow_tracking_uri`：MLflow Tracking URI
+- `run.llm_model`：模型名称（如 `qwen2.5:3b-instruct`）
+
 
 ---
 
