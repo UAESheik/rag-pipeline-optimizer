@@ -32,10 +32,10 @@ def write_csv(path: Path, rows: List[Dict], fieldnames: List[str]) -> None:
     """写入 CSV 文件。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         w.writeheader()
         for r in rows:
-            w.writerow(r)
+            w.writerow({k: r.get(k, "") for k in fieldnames})
 
 
 def write_json(path: Path, obj: Dict) -> None:

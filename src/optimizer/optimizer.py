@@ -610,8 +610,8 @@ class RAGOptimizer:
             "context_recall", "answer_similarity", "faithfulness",
             "retrieval_coverage_proxy", "groundedness", "citation_quality",
             "answer_relevancy", "context_relevancy", "signal_quality",
-            "composite_no_judge", "judge_score",
-            "query_rewrite_usage", "decompose_branch_count", "hyde_usage",
+            "composite_no_judge", "judge_weight", "judge_score",
+            "query_program_depth", "query_rewrite_usage", "decompose_branch_count", "hyde_usage",
             "metadata_filter_hit_rate", "metadata_bonus_avg", "entity_match_rate",
             "rrf_fusion_gain", "citation_completeness", "citation_binding",
         ]
@@ -810,7 +810,7 @@ class RAGOptimizer:
                 "retrieval_failure_type", "grounding_failure_type", "citation_failure_type", "query_processing_failure_type",
                 "citation_completeness", "citation_binding",
                 "query_program_final_queries", "query_program_execution_path",
-                "query_rewrite_usage", "decompose_branch_count", "hyde_usage",
+                "query_program_depth", "query_rewrite_usage", "decompose_branch_count", "hyde_usage",
                 "metadata_filter_hit_rate", "metadata_bonus_avg", "entity_match_rate", "rrf_fusion_gain",
             ]
             per_query_path = out_dir / "per_query_diagnostics.csv"
