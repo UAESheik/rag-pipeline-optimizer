@@ -145,30 +145,30 @@ flowchart LR
 ### 2.3 模块职责与框架借鉴
 
 
-| 层    | 职责                                   | 文件                                 | 框架借鉴                                             |
-| ---- | ------------------------------------ | ---------------------------------- | ------------------------------------------------ |
-| 数据加载 | 读取语料、评估集                             | `src/utils/io.py`                  | —                                                |
-| 分块   | token / sentence / semantic 三种策略     | `src/chunking/chunker.py`          | —                                                |
-| 检索   | BM25 / dense / hybrid（RRF 融合）        | `src/retrieval/retriever.py`       | **FlashRAG**：`_rrf_merge()`自实现 RRF（k=60）         |
-| 重排   | cross-encoder 可配置                    | `src/retrieval/reranker.py`        | —                                                |
-| 查询改写 | expand / decompose / HyDE            | `src/retrieval/query_processor.py` | **DSPy**：`QuerySignature`+`QueryModule` 声明式结构    |
-| 生成   | concise / citation_first 两种模式        | `src/generation/generator.py`      | —                                                |
-| 指标评估 | Case1/Case2 双场景，支持 BERTScore + 代码代理指标 | `src/evaluation/metrics.py`        | —                                                |
-| 诊断分析 | RAGChecker 风格三项诊断 + LLM-as-Judge 证据落地性 | `src/evaluation/diagnostics.py`    | **LightRAG**：实体元数据注入 `_detect_entities()`        |
-| 优化循环 | 搜索空间枚举 + Pareto 多目标分析                | `src/optimizer/optimizer.py`       | **AutoRAG**：`_iter_configs()`/`_run_case()` 评估闭环 |
+| 层    | 职责                             | 文件                                 | 当前实现说明                       |
+| ---- | ------------------------------ | ---------------------------------- | ---------------------------- |
+| 数据加载 | 读取语料、评估集                       | `src/utils/io.py`                  | 通用 I/O，不依赖外部框架               |
+| 分块   | token / sentence / semantic 分块 | `src/chunking/chunker.py`          | 支持结构解析、重叠注入、元数据保留            |
+| 检索   | BM25 / dense / hybrid（RRF）     | `src/retrieval/retriever.py`       | 自实现 hybrid 检索与 provenance 输出 |
+| 重排   | cross-encoder / 代理重排           | `src/retrieval/reranker.py`        | 可用本地模型，离线时自动降级               |
+| 查询改写 | expand / decompose / HyDE      | `src/retrieval/query_processor.py` | 声明式 query program，自实现模块化流程   |
+| 生成   | concise / citation_first       | `src/generation/generator.py`      | 支持证据优先提示词与离线兜底               |
+| 指标评估 | Case1/Case2 双场景                | `src/evaluation/metrics.py`        | 使用本地代理指标与可选增强指标              |
+| 诊断分析 | failure taxonomy + judge       | `src/evaluation/diagnostics.py`    | 结构化诊断字段已接入输出                 |
+| 优化循环 | 搜索空间枚举 + Pareto 分析             | `src/optimizer/optimizer.py`       | 评估驱动的优化闭环与 holdout 检验        |
 
 
-> 四个框架借鉴均为自实现核心算法，不依赖原框架包，完整透明可离线运行（详见第 9 节）。
+> 说明：本项目不是原框架包的黑盒调用，而是围绕 AutoRAG / DSPy / FlashRAG / LightRAG 的关键思想做了**自实现落地**。因此文档中建议使用“借鉴核心机制”或“自实现关键能力”表述，避免误导为完整复刻原框架。
 
 ### 2.4 失败模式与处理策略
 
 
-| 失败类型    | 诊断信号                                                        | 处理策略                                             |
-| ------- | ----------------------------------------------------------- | ------------------------------------------------ |
-| 检索覆盖不足  | `context_recall` / `retrieval_coverage_proxy` 过低            | 调整 chunk size / overlap / top_k；启用 query rewrite |
+| 失败类型    | 诊断信号                                                        | 处理策略                                                                  |
+| ------- | ----------------------------------------------------------- | --------------------------------------------------------------------- |
+| 检索覆盖不足  | `context_recall` / `retrieval_coverage_proxy` 过低            | 调整 chunk size / overlap / top_k；启用 query rewrite                      |
 | 答案幻觉    | `faithfulness` / `groundedness` 低；`hallucination_risk=high` | Case2 默认 `citation_first` + `temperature=0.0` + 短答案约束；必要时再开启 reranker |
-| 外部模型不可用 | dense / BERTScore / cross-encoder 加载失败                      | 自动降级为 TF-IDF / 本地复合指标（token F1 + TF-IDF），主流程不中断 |
-| 过拟合     | `overfit_gap` 偏大                                            | 收缩搜索空间；调整指标权重；增加 holdout 比例                      |
+| 外部模型不可用 | dense / BERTScore / cross-encoder 加载失败                      | 自动降级为 TF-IDF / 本地复合指标（token F1 + TF-IDF），主流程不中断                       |
+| 过拟合     | `overfit_gap` 偏大                                            | 收缩搜索空间；调整指标权重；增加 holdout 比例                                           |
 
 
 ---
@@ -301,7 +301,6 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 - `run.mlflow_tracking_uri`：MLflow Tracking URI
 - `run.llm_model`：模型名称（如 `qwen2.5:3b-instruct`）
 
-
 ---
 
 ## 7. 如何对比优化（Case1 vs Case2）
@@ -377,7 +376,7 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 
 ## 9. 框架借鉴说明（AutoRAG / DSPy / FlashRAG / LightRAG）
 
-> 本项目已在代码层面真实借鉴四个框架的核心思想，非黑盒调用。
+> 本项目围绕 AutoRAG / DSPy / FlashRAG / LightRAG 的关键思想做了自实现落地，重点提供可审计、可离线运行的核心机制，而非原框架的黑盒调用或完整复刻。
 
 ### 9.1 AutoRAG — 评估驱动的 Pipeline 搜索
 
@@ -397,9 +396,9 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 - `QuerySignature` / `QueryStepResult` / `QueryProgramResult`：声明查询程序及中间结果结构
 - `run_query_program()`：将 rewrite / decompose / HyDE / intent filter 组合为可追踪执行路径
 - 预定义 Signature：`EXPAND_SIG` / `DECOMPOSE_SIG` / `HYDE_SIG` / `INTENT_FILTER_SIG`
-- 生产替换：只需将模块内部规则替换为 LLM 调用，外部接口保持不变
+- 当前实现是 DSPy 风格的声明式查询程序，自实现了可组合执行路径与结构化中间结果；接口已预留 LLM 版本扩展，但当前默认仍以规则驱动为主
 
-**非黑盒说明：** 不引入 `dspy` 包；若接入 LLM 改写，建议先在验证集对比改写前后 `context_recall` 变化。
+**非黑盒说明：** 不引入 `dspy` 包；若后续接入 LLM 改写，可在不改变外部调用方式的情况下替换内部规则实现，并先在验证集对比改写前后 `context_recall` 变化。
 
 ### 9.3 FlashRAG — 标准化检索接口 + RRF 融合
 
@@ -409,6 +408,7 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 - `retrieve_with_provenance()`：返回 source、bm25/dense rank&score、rrf_score、metadata_bonus、matched_entities/fields
 - hybrid 模式：BM25 + dense 双路各自排序后 RRF 融合，非简单加权平均
 - 统一接口：`bm25` / `dense` / `hybrid` 三种模式共享相同调用签名
+- 该模块自实现了 candidate generation、RRF fusion、provenance 输出与 rerank 接口，属于 FlashRAG 风格的透明化检索管线
 
 **非黑盒说明：** 不依赖 FlashRAG 包；RRF 实现约 20 行，逻辑完全透明，支持离线降级。
 
@@ -420,6 +420,7 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 - `_metadata_bonus()`：实体/标题/source 等字段与 query 命中后加分，真实影响排序
 - `retrieve_with_provenance()`：保留 metadata bonus 与命中字段证据，便于审计
 - `_build_metadata_filter()`：根据 `metadata_filter_fields` 从 query 自动匹配 metadata 条件（非硬编码）
+- 该模块实现了实体感知与元数据感知的检索增强，能让 metadata 真正参与排序与过滤；当前属于 LightRAG 风格的轻量增强实现，而非完整图结构检索系统
 - 生产替换：将 `_detect_entities()` 换为 spaCy / transformers NER，接口不变
 
 ### 9.5 裁判模型（LLM-as-Judge）接地性检查
@@ -430,6 +431,7 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 - 当前默认 provider：`ollama`（免费开源本地模型）
 - 输出到 `per_query_diagnostics.csv`：`judge_score` / `judge_method` / `judge_warning`
 - 外部调用事件在运行时直接输出到终端（`start/success/fallback`）
+- 该系统基于规则/代理/可选 LLM judge 生成 failure taxonomy，用于定位检索、接地与引用问题
 
 **评估稳健性说明：**
 
