@@ -149,12 +149,14 @@ def judge_groundedness_score(
         }
 
 
-def _failure_taxonomy(query: str, answer: str, retrieved: List[RetrievedChunk], report: Dict[str, object]) -> Dict[str, str]:
+def _failure_taxonomy(query: str, answer: str, retrieved: List[RetrievedChunk], report: Dict[str, object]) -> Dict[str, object]:
     retrieval_failure_type = "none"
     if not retrieved:
         retrieval_failure_type = "no_retrieval"
     elif bool(report.get("retrieval_bias", {}).get("bias_detected", False)):
         retrieval_failure_type = "retrieval_bias"
+    elif all(float(score) < 0.1 for _, score in retrieved):
+        retrieval_failure_type = "low_signal_retrieval"
 
     citation_ids = _citation_doc_ids(answer)
     retrieved_ids = {c.doc_id for c, _ in retrieved}
@@ -164,22 +166,32 @@ def _failure_taxonomy(query: str, answer: str, retrieved: List[RetrievedChunk], 
         citation_failure_type = "missing_citation"
     elif missing_citations:
         citation_failure_type = "citation_mismatch"
+    elif len(set(citation_ids)) < len(citation_ids):
+        citation_failure_type = "duplicate_citation"
 
     grounding_failure_type = "none"
     hall = report.get("hallucination", {})
     if hall.get("hallucination_risk") in ("medium", "high"):
         grounding_failure_type = "unsupported_claims"
+    elif float(hall.get("claim_support", 1.0)) < 0.7:
+        grounding_failure_type = "weak_claim_support"
 
     query_processing_failure_type = "none"
     if report.get("query_drift", {}).get("drift_detected", False):
         query_processing_failure_type = "query_drift"
     elif len(query.split()) <= 2 and len(answer.split()) > 40:
         query_processing_failure_type = "over_expansion"
+    elif len(query.split()) > 8 and len(_extract_claims(answer)) <= 1:
+        query_processing_failure_type = "under_decomposition"
 
-    citation_completeness = 0.0 if not answer else round(len(citation_ids) / max(1, len(_extract_claims(answer))), 4)
+    claims = _extract_claims(answer)
+    citation_completeness = 0.0 if not answer else round(len(citation_ids) / max(1, len(claims)), 4)
     citation_binding = 0.0
     if citation_ids:
         citation_binding = round(len([x for x in citation_ids if x in retrieved_ids]) / len(citation_ids), 4)
+    claim_coverage = 0.0
+    if claims:
+        claim_coverage = round(sum(1 for cl in claims if _overlap(cl, " ".join(c.text for c, _ in retrieved))) / len(claims), 4)
 
     return {
         "retrieval_failure_type": retrieval_failure_type,
@@ -188,6 +200,8 @@ def _failure_taxonomy(query: str, answer: str, retrieved: List[RetrievedChunk], 
         "query_processing_failure_type": query_processing_failure_type,
         "citation_completeness": citation_completeness,
         "citation_binding": citation_binding,
+        "claim_coverage": claim_coverage,
+        "retrieval_signal_strength": round(sum(float(score) for _, score in retrieved) / max(1, len(retrieved)), 4) if retrieved else 0.0,
     }
 
 
