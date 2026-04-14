@@ -394,10 +394,10 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 
 **已在代码中实现（`src/retrieval/query_processor.py`）：**
 
-- `QuerySignature` 数据类：声明任务名称、输入/输出字段语义、执行策略
-- `QueryModule.forward()`：执行逻辑与声明解耦，规则实现完全透明
-- 三种预定义 Signature：`EXPAND_SIG` / `DECOMPOSE_SIG` / `HYDE_SIG`
-- 生产替换：只需修改 `forward()` 内部为 LLM 调用，接口不变
+- `QuerySignature` / `QueryStepResult` / `QueryProgramResult`：声明查询程序及中间结果结构
+- `run_query_program()`：将 rewrite / decompose / HyDE / intent filter 组合为可追踪执行路径
+- 预定义 Signature：`EXPAND_SIG` / `DECOMPOSE_SIG` / `HYDE_SIG` / `INTENT_FILTER_SIG`
+- 生产替换：只需将模块内部规则替换为 LLM 调用，外部接口保持不变
 
 **非黑盒说明：** 不引入 `dspy` 包；若接入 LLM 改写，建议先在验证集对比改写前后 `context_recall` 变化。
 
@@ -406,6 +406,7 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 **已在代码中实现（`src/retrieval/retriever.py`）：**
 
 - `_rrf_merge()`：完整实现 RRF 算法（`score(d) = sum(1/(k+rank_i(d)))`，k=60）
+- `retrieve_with_provenance()`：返回 source、bm25/dense rank&score、rrf_score、metadata_bonus、matched_entities/fields
 - hybrid 模式：BM25 + dense 双路各自排序后 RRF 融合，非简单加权平均
 - 统一接口：`bm25` / `dense` / `hybrid` 三种模式共享相同调用签名
 
@@ -413,12 +414,12 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 
 ### 9.4 LightRAG — 实体感知元数据注入
 
-**已在代码中实现（`src/retrieval/retriever.py`）：**
+**已在代码中实现（`src/retrieval/retriever.py` + `src/optimizer/optimizer.py`）：**
 
 - `_detect_entities()`：构建索引时检测领域关键词，注入 `chunk.metadata["entities"]`
-- `_DOMAIN_ENTITIES` 词典：覆盖 kyc/aml/fee/credit/fraud/sanctions/pii 等金融实体
-- `retrieve()` metadata_filter：支持按实体类别过滤候选集，模拟图谱关联查询入口
-- `optimizer.py` 中 metadata_filter 已改为字段感知规则：根据 `metadata_filter_fields` 从 query 自动匹配候选 metadata 值（非 kyc/fee 硬编码）
+- `_metadata_bonus()`：实体/标题/source 等字段与 query 命中后加分，真实影响排序
+- `retrieve_with_provenance()`：保留 metadata bonus 与命中字段证据，便于审计
+- `_build_metadata_filter()`：根据 `metadata_filter_fields` 从 query 自动匹配 metadata 条件（非硬编码）
 - 生产替换：将 `_detect_entities()` 换为 spaCy / transformers NER，接口不变
 
 ### 9.5 裁判模型（LLM-as-Judge）接地性检查
