@@ -14,7 +14,7 @@ from src.chunking.chunker import chunk_document
 from src.evaluation.diagnostics import diagnose_case, full_ragchecker_report
 from src.evaluation.metrics import case1_metrics, case2_metrics
 from src.generation.generator import generate_answer
-from src.retrieval.query_processor import apply_query_processor
+from src.retrieval.query_processor import run_query_program
 from src.retrieval.reranker import rerank
 from src.retrieval.retriever import Retriever
 from src.report.report_generator import generate_final_report
@@ -55,17 +55,14 @@ class RAGOptimizer:
         emb_cyc = _cycle(ss["retrieval"]["embedding_model"])
         mfil_cyc = _cycle(ss["retrieval"]["metadata_filter_enabled"])
         menr_cyc = _cycle(ss["retrieval"].get("metadata_enrichment", [True]))
-        retr_topk_cyc = _cycle(ss["retrieval"].get("top_k", [self.top_k]))
         rew_cyc = _cycle(ss["query_processor"]["rewrite"])
         dec_cyc = _cycle(ss["query_processor"]["decompose"])
+        hyd_cyc = _cycle(ss["query_processor"].get("use_hyde", [False]))
         idf_cyc = _cycle(ss["query_processor"].get("intent_driven_filter", [False]))
         ovt_cyc = _cycle(ss["chunking"]["overlap_type"])
         ovs_cyc = _cycle(ss["chunking"]["overlap_size"])
         temp_cyc = _cycle(ss["generation"].get("temperature", [0.0]))
-        prompt_cyc = _cycle(ss["generation"].get("prompt_template", ["standard"]))
-        max_new_tokens_cyc = _cycle(ss["generation"].get("max_new_tokens", [256]))
         rm_cyc = _cycle(ss["reranking"]["model"])
-        rerank_top_k_cyc = _cycle(ss["reranking"].get("rerank_top_k", [5]))
 
         out: List[Dict[str, Any]] = []
         for idx, (retriever, strategy, size, rerank_style, rerank_en) in enumerate(primary):
@@ -76,7 +73,6 @@ class RAGOptimizer:
                     "embedding_model": next(emb_cyc),
                     "metadata_filter_enabled": next(mfil_cyc),
                     "metadata_enrichment": next(menr_cyc),
-                    "top_k": next(retr_topk_cyc),
                     "metadata_filter_fields": ss["retrieval"].get("metadata_filter_fields", ["section_title", "entities", "type"]),
                 },
                 "chunking": {
@@ -88,23 +84,21 @@ class RAGOptimizer:
                     "semantic_max_size": ss["chunking"]["semantic_max_size"][0],
                     "window_size": ss["chunking"].get("window_size", [3])[0],
                     "similarity_threshold": ss["chunking"].get("similarity_threshold", [0.65])[0],
-                    "preserve_table_as_markdown": bool(ss["chunking"].get("preserve_table_as_markdown", [True])[0]),
-                    "generate_image_caption": bool(ss["chunking"].get("generate_image_caption", [False])[0]),
+                    "preserve_table_as_markdown": True,
+                    "generate_image_caption": False,
                 },
                 "generation": {
                     "answer_style": rerank_style,
                     "temperature": next(temp_cyc),
-                    "prompt_template": next(prompt_cyc),
-                    "max_new_tokens": next(max_new_tokens_cyc),
                 },
                 "reranking": {
                     "enabled": rerank_en,
                     "model": next(rm_cyc),
-                    "top_k": next(rerank_top_k_cyc),
                 },
                 "query_processor": {
                     "rewrite": next(rew_cyc),
                     "decompose": next(dec_cyc),
+                    "use_hyde": next(hyd_cyc),
                     "intent_driven_filter": next(idf_cyc),
                 },
             })
@@ -127,11 +121,6 @@ class RAGOptimizer:
             rerank_enabled_choices = [False]
             answer_style_choices = ["citation_first"]
             temperature_choices = [0.0]
-            prompt_template_choices = ["strict_no_hallucination"]
-            max_new_tokens_choices = [128]
-        else:
-            prompt_template_choices = ss["generation"].get("prompt_template", ["standard"])
-            max_new_tokens_choices = ss["generation"].get("max_new_tokens", [256])
 
         return {
             "config_id": f"cfg_{trial.number:05d}",
@@ -142,34 +131,27 @@ class RAGOptimizer:
                 "overlap_size": trial.suggest_categorical("chunking_overlap_size", ss["chunking"]["overlap_size"]),
                 "semantic_min_size": trial.suggest_categorical("chunking_semantic_min_size", ss["chunking"]["semantic_min_size"]),
                 "semantic_max_size": trial.suggest_categorical("chunking_semantic_max_size", ss["chunking"]["semantic_max_size"]),
-                "window_size": trial.suggest_categorical("chunking_window_size", ss["chunking"].get("window_size", [3])),
-                "similarity_threshold": trial.suggest_categorical("chunking_similarity_threshold", ss["chunking"].get("similarity_threshold", [0.65])),
-                "preserve_table_as_markdown": trial.suggest_categorical("chunking_preserve_table_as_markdown", ss["chunking"].get("preserve_table_as_markdown", [True])),
-                "generate_image_caption": trial.suggest_categorical("chunking_generate_image_caption", ss["chunking"].get("generate_image_caption", [False])),
             },
             "retrieval": {
                 "retriever": trial.suggest_categorical("retrieval_retriever", retriever_choices),
                 "embedding_model": trial.suggest_categorical("retrieval_embedding_model", ss["retrieval"]["embedding_model"]),
                 "metadata_filter_enabled": trial.suggest_categorical("retrieval_metadata_filter_enabled", ss["retrieval"]["metadata_filter_enabled"]),
                 "metadata_enrichment": trial.suggest_categorical("retrieval_metadata_enrichment", ss["retrieval"].get("metadata_enrichment", [True])),
-                "top_k": trial.suggest_categorical("retrieval_top_k", ss["retrieval"].get("top_k", [self.top_k])),
                 "metadata_filter_fields": ss["retrieval"].get("metadata_filter_fields", ["section_title", "entities", "type"]),
             },
             "query_processor": {
                 "rewrite": trial.suggest_categorical("query_rewrite", ss["query_processor"]["rewrite"]),
                 "decompose": trial.suggest_categorical("query_decompose", ss["query_processor"]["decompose"]),
+                "use_hyde": trial.suggest_categorical("query_use_hyde", ss["query_processor"].get("use_hyde", [False])),
                 "intent_driven_filter": trial.suggest_categorical("query_intent_driven_filter", ss["query_processor"].get("intent_driven_filter", [False])),
             },
             "generation": {
                 "answer_style": trial.suggest_categorical("generation_answer_style", answer_style_choices),
                 "temperature": trial.suggest_categorical("generation_temperature", temperature_choices),
-                "prompt_template": trial.suggest_categorical("generation_prompt_template", prompt_template_choices),
-                "max_new_tokens": trial.suggest_categorical("generation_max_new_tokens", max_new_tokens_choices),
             },
             "reranking": {
                 "enabled": trial.suggest_categorical("reranking_enabled", rerank_enabled_choices),
                 "model": trial.suggest_categorical("reranking_model", ss["reranking"]["model"]),
-                "top_k": trial.suggest_categorical("reranking_top_k", ss["reranking"].get("rerank_top_k", [5])),
             },
         }
 
@@ -199,7 +181,6 @@ class RAGOptimizer:
                 "embedding_model": _pick(ss["retrieval"]["embedding_model"]),
                 "metadata_filter_enabled": _pick(ss["retrieval"]["metadata_filter_enabled"]),
                 "metadata_enrichment": _pick(ss["retrieval"].get("metadata_enrichment", [True])),
-                "top_k": _pick(ss["retrieval"].get("top_k", [self.top_k])),
                 "metadata_filter_fields": ss["retrieval"].get(
                     "metadata_filter_fields", ["section_title", "entities", "type"]
                 ),
@@ -209,27 +190,25 @@ class RAGOptimizer:
                 "size": size,
                 "overlap_type": _pick(ss["chunking"]["overlap_type"]),
                 "overlap_size": _pick(ss["chunking"]["overlap_size"]),
-                "semantic_min_size": _pick(ss["chunking"].get("semantic_min_size", [350])),
-                "semantic_max_size": _pick(ss["chunking"].get("semantic_max_size", [650])),
+                "semantic_min_size": ss["chunking"]["semantic_min_size"][0],
+                "semantic_max_size": ss["chunking"]["semantic_max_size"][0],
                 "window_size": _pick(ss["chunking"].get("window_size", [3])),
                 "similarity_threshold": _pick(ss["chunking"].get("similarity_threshold", [0.65])),
-                "preserve_table_as_markdown": _pick(ss["chunking"].get("preserve_table_as_markdown", [True])),
-                "generate_image_caption": _pick(ss["chunking"].get("generate_image_caption", [False])),
+                "preserve_table_as_markdown": True,
+                "generate_image_caption": False,
             },
             "generation": {
                 "answer_style": _pick(ss["generation"]["answer_style"]),
                 "temperature": _pick(ss["generation"].get("temperature", [0.0])),
-                "prompt_template": _pick(ss["generation"].get("prompt_template", ["standard"])),
-                "max_new_tokens": _pick(ss["generation"].get("max_new_tokens", [256])),
             },
             "reranking": {
                 "enabled": _pick(ss["reranking"]["enabled"]),
                 "model": _pick(ss["reranking"]["model"]),
-                "top_k": _pick(ss["reranking"].get("rerank_top_k", [5])),
             },
             "query_processor": {
                 "rewrite": _pick(ss["query_processor"]["rewrite"]),
                 "decompose": _pick(ss["query_processor"]["decompose"]),
+                "use_hyde": _pick(ss["query_processor"].get("use_hyde", [False])),
                 "intent_driven_filter": _pick(ss["query_processor"].get("intent_driven_filter", [False])),
             },
         }
@@ -254,10 +233,6 @@ class RAGOptimizer:
                     overlap_size=cfg["chunking"]["overlap_size"],
                     semantic_min_size=cfg["chunking"]["semantic_min_size"],
                     semantic_max_size=cfg["chunking"]["semantic_max_size"],
-                    preserve_table_as_markdown=bool(cfg["chunking"].get("preserve_table_as_markdown", True)),
-                    generate_image_caption=bool(cfg["chunking"].get("generate_image_caption", False)),
-                    window_size=int(cfg["chunking"].get("window_size", 3)),
-                    similarity_threshold=float(cfg["chunking"].get("similarity_threshold", 0.65)),
                     base_metadata=base_metadata,
                 )
             )
@@ -389,19 +364,14 @@ class RAGOptimizer:
         dataset = dataset_override if dataset_override is not None else (self.case1 if case_num == 1 else self.case2)
         # Case2 定向策略：固定生成与检索配置，降低幻觉噪声
         effective_cfg = json.loads(json.dumps(cfg))
-        effective_top_k = int(cfg.get("retrieval", {}).get("top_k", self.top_k))
+        effective_top_k = self.top_k
         if case_num == 2:
             effective_cfg.setdefault("generation", {})["answer_style"] = "citation_first"
             effective_cfg["generation"]["temperature"] = 0.0
-            effective_cfg["generation"]["prompt_template"] = "strict_no_hallucination"
-            effective_cfg["generation"]["max_new_tokens"] = min(
-                int(effective_cfg["generation"].get("max_new_tokens", 128)),
-                128,
-            )
             if effective_cfg.get("retrieval", {}).get("retriever") not in ("bm25", "hybrid"):
                 effective_cfg["retrieval"]["retriever"] = "bm25"
             effective_cfg.setdefault("reranking", {})["enabled"] = False
-            effective_top_k = min(int(effective_cfg.get("retrieval", {}).get("top_k", effective_top_k)), 6)
+            effective_top_k = min(self.top_k, 6)
         cfg = effective_cfg
 
         chunks = self._build_chunks(cfg)
@@ -430,27 +400,27 @@ class RAGOptimizer:
 
             retrieved = retriever.retrieve(query, top_k=effective_top_k, metadata_filter=metadata_filter)
             # 查询改写/分解：对多个子查询分别检索后合并去重
-            sub_queries = apply_query_processor(
-                query,
+            qp = run_query_program(
+                query=query,
                 rewrite=cfg["query_processor"].get("rewrite", False),
                 decompose=cfg["query_processor"].get("decompose", False),
+                use_hyde=cfg["query_processor"].get("use_hyde", False),
+                intent_driven_filter=cfg["query_processor"].get("intent_driven_filter", False),
             )
+            sub_queries = qp.final_queries
+
+            merged_items = retriever.retrieve_with_provenance(query, top_k=effective_top_k, metadata_filter=metadata_filter)
             if len(sub_queries) > 1:
-                seen_ids: set = {c.chunk_id for c, _ in retrieved}
+                seen_ids: set = {it.chunk.chunk_id for it in merged_items}
                 for sq in sub_queries[1:]:
-                    for chunk, score in retriever.retrieve(sq, top_k=effective_top_k, metadata_filter=metadata_filter):
-                        if chunk.chunk_id not in seen_ids:
-                            retrieved.append((chunk, score))
-                            seen_ids.add(chunk.chunk_id)
-                retrieved = sorted(retrieved, key=lambda x: x[1], reverse=True)[:effective_top_k]
-            rerank_top_k = int(cfg.get("reranking", {}).get("top_k", len(retrieved)))
-            retrieved = rerank(
-                retrieved,
-                enabled=cfg["reranking"]["enabled"],
-                query=query,
-                model_name=cfg.get("reranking", {}).get("model", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
-            )
-            retrieved = retrieved[:max(1, rerank_top_k)]
+                    for it in retriever.retrieve_with_provenance(sq, top_k=effective_top_k, metadata_filter=metadata_filter):
+                        if it.chunk.chunk_id not in seen_ids:
+                            merged_items.append(it)
+                            seen_ids.add(it.chunk.chunk_id)
+
+            merged_items = sorted(merged_items, key=lambda x: x.score, reverse=True)[:effective_top_k]
+            retrieved = [(it.chunk, it.score) for it in merged_items]
+            retrieved = rerank(retrieved, enabled=cfg["reranking"]["enabled"], query=query)
             answer = generate_answer(
                 query=query,
                 retrieved=retrieved,
@@ -458,8 +428,6 @@ class RAGOptimizer:
                 temperature=cfg["generation"].get("temperature", 0.0),
                 llm_model=str(self.config.get("run", {}).get("llm_model", "qwen2.5:3b-instruct")),
                 use_llm=bool(self.config.get("run", {}).get("use_llm_generator", True)),
-                prompt_template=str(cfg.get("generation", {}).get("prompt_template", "standard")),
-                max_new_tokens=int(cfg.get("generation", {}).get("max_new_tokens", 256)),
             )
             if case_num == 2:
                 tokens = answer.split()
@@ -521,6 +489,20 @@ class RAGOptimizer:
             m["judge_weight"] = judge_weight
             m["composite"] = round((1.0 - judge_weight) * float(m.get("composite", 0.0)) + judge_weight * float(judge_score), 4)
 
+            rewrite_used = 1 if qp.rewritten_queries else 0
+            decompose_used = len(qp.decomposed_queries)
+            hyde_used = 1 if qp.hypothetical_queries else 0
+            metadata_bonus_avg = round(
+                sum(float(it.provenance.metadata_bonus) for it in merged_items) / max(1, len(merged_items)), 4
+            ) if merged_items else 0.0
+            entity_match_rate = round(
+                sum(1 for it in merged_items if it.provenance.matched_entities) / max(1, len(merged_items)), 4
+            ) if merged_items else 0.0
+            rrf_fusion_gain = round(
+                sum(float(it.provenance.rrf_score) for it in merged_items) / max(1, len(merged_items)), 4
+            ) if merged_items else 0.0
+            metadata_filter_hit_rate = 1.0 if metadata_filter else 0.0
+
             result: Dict[str, Any] = {
                 "config_id": cfg["config_id"],
                 "query_id": qid,
@@ -536,6 +518,21 @@ class RAGOptimizer:
                 "judge_score": judge_score,
                 "judge_method": judge_method,
                 "judge_warning": judge_warning,
+                "retrieval_failure_type": rc.get("retrieval_failure_type", "none"),
+                "grounding_failure_type": rc.get("grounding_failure_type", "none"),
+                "citation_failure_type": rc.get("citation_failure_type", "none"),
+                "query_processing_failure_type": rc.get("query_processing_failure_type", "none"),
+                "citation_completeness": rc.get("citation_completeness", 0.0),
+                "citation_binding": rc.get("citation_binding", 0.0),
+                "query_program_final_queries": " || ".join(qp.final_queries),
+                "query_program_execution_path": " > ".join(qp.execution_path),
+                "query_rewrite_usage": rewrite_used,
+                "decompose_branch_count": decompose_used,
+                "hyde_usage": hyde_used,
+                "metadata_filter_hit_rate": metadata_filter_hit_rate,
+                "metadata_bonus_avg": metadata_bonus_avg,
+                "entity_match_rate": entity_match_rate,
+                "rrf_fusion_gain": rrf_fusion_gain,
             }
             self.cache.set(cache_key, result)
             per_query.append(result)
@@ -579,6 +576,9 @@ class RAGOptimizer:
             "retrieval_coverage_proxy", "groundedness", "citation_quality",
             "answer_relevancy", "context_relevancy", "signal_quality",
             "composite_no_judge", "judge_score",
+            "query_rewrite_usage", "decompose_branch_count", "hyde_usage",
+            "metadata_filter_hit_rate", "metadata_bonus_avg", "entity_match_rate",
+            "rrf_fusion_gain", "citation_completeness", "citation_binding",
         ]
 
         def _avg_metric(rows: List[Dict[str, Any]], key: str) -> float:
@@ -607,13 +607,15 @@ class RAGOptimizer:
                     "trial_seconds": trial_seconds,
                     "retriever": cfg["retrieval"]["retriever"],
                     "embedding_model": cfg["retrieval"].get("embedding_model", "tfidf"),
-                    "retrieval_top_k": int(cfg["retrieval"].get("top_k", self.top_k)),
                     "chunk_strategy": cfg["chunking"]["strategy"],
                     "chunk_size": cfg["chunking"]["size"],
                     "rerank_enabled": cfg["reranking"]["enabled"],
-                    "rerank_top_k": int(cfg["reranking"].get("top_k", cfg["retrieval"].get("top_k", self.top_k))),
-                    "prompt_template": str(cfg["generation"].get("prompt_template", "standard")),
-                    "max_new_tokens": int(cfg["generation"].get("max_new_tokens", 256)),
+                    "query_rewrite_enabled": cfg["query_processor"].get("rewrite", False),
+                    "query_decompose_enabled": cfg["query_processor"].get("decompose", False),
+                    "query_hyde_enabled": cfg["query_processor"].get("use_hyde", False),
+                    "intent_driven_filter": cfg["query_processor"].get("intent_driven_filter", False),
+                    "metadata_filter_enabled": cfg["retrieval"].get("metadata_filter_enabled", False),
+                    "metadata_enrichment": cfg["retrieval"].get("metadata_enrichment", False),
                     **{k: _avg_metric(res["per_query"], k) for k in metric_cols},
                 }
                 run_summary_rows.append(row)
@@ -638,13 +640,15 @@ class RAGOptimizer:
                     "trial_seconds": trial_seconds,
                     "retriever": cfg["retrieval"]["retriever"],
                     "embedding_model": cfg["retrieval"].get("embedding_model", "tfidf"),
-                    "retrieval_top_k": int(cfg["retrieval"].get("top_k", self.top_k)),
                     "chunk_strategy": cfg["chunking"]["strategy"],
                     "chunk_size": cfg["chunking"]["size"],
                     "rerank_enabled": cfg["reranking"]["enabled"],
-                    "rerank_top_k": int(cfg["reranking"].get("top_k", cfg["retrieval"].get("top_k", self.top_k))),
-                    "prompt_template": str(cfg["generation"].get("prompt_template", "standard")),
-                    "max_new_tokens": int(cfg["generation"].get("max_new_tokens", 256)),
+                    "query_rewrite_enabled": cfg["query_processor"].get("rewrite", False),
+                    "query_decompose_enabled": cfg["query_processor"].get("decompose", False),
+                    "query_hyde_enabled": cfg["query_processor"].get("use_hyde", False),
+                    "intent_driven_filter": cfg["query_processor"].get("intent_driven_filter", False),
+                    "metadata_filter_enabled": cfg["retrieval"].get("metadata_filter_enabled", False),
+                    "metadata_enrichment": cfg["retrieval"].get("metadata_enrichment", False),
                     **{k: _avg_metric(res["per_query"], k) for k in metric_cols},
                 }
                 run_summary_rows.append(row)
@@ -699,7 +703,13 @@ class RAGOptimizer:
         write_csv(
             run_summary_path,
             run_rows_with_case,
-            ["case_num", "config_id", "mean_composite", "trial_seconds", "retriever", "embedding_model", "retrieval_top_k", "chunk_strategy", "chunk_size", "rerank_enabled", "rerank_top_k", "prompt_template", "max_new_tokens", *metric_cols],
+            [
+                "case_num", "config_id", "mean_composite", "trial_seconds",
+                "retriever", "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled",
+                "query_rewrite_enabled", "query_decompose_enabled", "query_hyde_enabled", "intent_driven_filter",
+                "metadata_filter_enabled", "metadata_enrichment",
+                *metric_cols,
+            ],
         )
 
         # 多目标 Pareto 分析（AutoRAG 风格：质量 vs 延迟权衡，默认启用）
@@ -731,14 +741,9 @@ class RAGOptimizer:
             pareto_csv_path,
             pareto_rows,
             ["config_id", "mean_composite", "trial_seconds", "retriever",
-             "embedding_model", "retrieval_top_k", "chunk_strategy", "chunk_size", "rerank_enabled", "rerank_top_k", "prompt_template", "max_new_tokens", *metric_cols],
+             "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled", *metric_cols],
         )
-        self._write_pareto_plot(
-            out_dir,
-            run_summary_rows,
-            case_num,
-            frontier_config_ids={str(r.get("config_id", "")) for r in pareto_rows},
-        )
+        self._write_pareto_plot(out_dir, pareto_rows, case_num)
 
         if bool(self.config.get("run", {}).get("mlflow_enabled", False)):
             self._log_mlflow_case(
@@ -760,6 +765,11 @@ class RAGOptimizer:
                 "failure_reason", "ragchecker_findings", "hallucination_risk",
                 "retrieval_bias", "query_drift",
                 "judge_score", "judge_method", "judge_warning",
+                "retrieval_failure_type", "grounding_failure_type", "citation_failure_type", "query_processing_failure_type",
+                "citation_completeness", "citation_binding",
+                "query_program_final_queries", "query_program_execution_path",
+                "query_rewrite_usage", "decompose_branch_count", "hyde_usage",
+                "metadata_filter_hit_rate", "metadata_bonus_avg", "entity_match_rate", "rrf_fusion_gain",
             ]
             per_query_path = out_dir / "per_query_diagnostics.csv"
             diag_rows_with_case = [{**r, "case_num": case_num} for r in best_per_query]
@@ -796,18 +806,14 @@ class RAGOptimizer:
         self._active_case_num = None
 
 
-    def _write_pareto_plot(
-        self,
-        out_dir: Path,
-        rows: List[Dict[str, Any]],
-        case_num: int,
-        frontier_config_ids: set[str] | None = None,
-    ) -> None:
+    def _write_pareto_plot(self, out_dir: Path, rows: List[Dict[str, Any]], case_num: int) -> None:
         """
-        输出质量-延迟散点图：
-        - 全部 trial 点（避免图上只有 1 个 Pareto 点）
-        - Pareto 前沿点高亮
+        输出 Pareto 散点图（质量 vs 延迟），含以下增强可视化：
+        - 每个点标注 config_id
+        - 颜色映射 mean_composite 高低（越黄越优）
         - 标注最优质量点（Best Quality）与最低延迟点（Fastest）
+        - 横轴/纵轴带参考线（均值）
+        - 图注说明 Pareto 前沿含义
         """
         if not rows:
             return
@@ -815,6 +821,7 @@ class RAGOptimizer:
             import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
+            import matplotlib.cm as cm
             import numpy as np
 
             xs = [float(r["trial_seconds"]) for r in rows]
@@ -823,88 +830,35 @@ class RAGOptimizer:
             retrievers = [str(r.get("retriever", "")) for r in rows]
             chunks = [f"{r.get('chunk_strategy','')}/{r.get('chunk_size','')}" for r in rows]
 
-            fig, ax = plt.subplots(figsize=(9, 5.5))
+            # 颜色映射：quality 越高越黄
+            norm = plt.Normalize(min(ys), max(ys))
+            colors = cm.RdYlGn(norm(ys))
 
-            # 全量 trial 点（主图层）
-            sc = ax.scatter(
-                xs,
-                ys,
-                c=ys,
-                cmap="RdYlGn",
-                s=70,
-                zorder=2,
-                vmin=min(ys),
-                vmax=max(ys),
-                edgecolors="#333",
-                linewidths=0.4,
-                alpha=0.85,
-            )
+            fig, ax = plt.subplots(figsize=(9, 5.5))
+            sc = ax.scatter(xs, ys, c=ys, cmap="RdYlGn", s=80, zorder=3,
+                            vmin=min(ys), vmax=max(ys), edgecolors="#333", linewidths=0.5)
             plt.colorbar(sc, ax=ax, label="mean_composite (quality)")
 
-            # Pareto 前沿点高亮（可选）
-            frontier_config_ids = frontier_config_ids or set()
-            if frontier_config_ids:
-                fx, fy = [], []
-                for r in rows:
-                    if str(r.get("config_id", "")) in frontier_config_ids:
-                        fx.append(float(r["trial_seconds"]))
-                        fy.append(float(r["mean_composite"]))
-                if fx:
-                    ax.scatter(
-                        fx,
-                        fy,
-                        s=130,
-                        facecolors="none",
-                        edgecolors="black",
-                        linewidths=1.2,
-                        zorder=4,
-                        label="Pareto frontier",
-                    )
-
-            # 标签降噪：仅标注 Pareto 前沿点 + TopK 质量点 + 最快点
-            top_k_labels = 8
-            top_quality_indices = sorted(range(len(ys)), key=lambda i: ys[i], reverse=True)[:top_k_labels]
-            frontier_indices = {
-                i for i, r in enumerate(rows)
-                if str(r.get("config_id", "")) in frontier_config_ids
-            }
-            best_t_idx = int(np.argmin(xs))
-            label_indices = set(top_quality_indices) | frontier_indices | {best_t_idx}
-
-            for i in sorted(label_indices):
-                x, y = xs[i], ys[i]
-                lab, ret, chk = labels[i], retrievers[i], chunks[i]
+            # 标注每个点
+            for x, y, lab, ret, chk in zip(xs, ys, labels, retrievers, chunks):
                 ax.annotate(
                     f"{lab}\n{ret}|{chk}",
                     (x, y),
                     textcoords="offset points",
                     xytext=(6, 4),
-                    fontsize=6.8,
-                    color="#222",
+                    fontsize=6.5,
+                    color="#333",
                 )
 
             # 标注最优质量点
             best_q_idx = int(np.argmax(ys))
-            ax.scatter(
-                [xs[best_q_idx]],
-                [ys[best_q_idx]],
-                s=180,
-                marker="*",
-                color="gold",
-                zorder=5,
-                label=f"Best Quality: {labels[best_q_idx]}",
-            )
+            ax.scatter([xs[best_q_idx]], [ys[best_q_idx]], s=180, marker="*",
+                       color="gold", zorder=5, label=f"Best Quality: {labels[best_q_idx]}")
 
             # 标注最快点
-            ax.scatter(
-                [xs[best_t_idx]],
-                [ys[best_t_idx]],
-                s=120,
-                marker="D",
-                color="steelblue",
-                zorder=5,
-                label=f"Fastest: {labels[best_t_idx]}",
-            )
+            best_t_idx = int(np.argmin(xs))
+            ax.scatter([xs[best_t_idx]], [ys[best_t_idx]], s=120, marker="D",
+                       color="steelblue", zorder=5, label=f"Fastest: {labels[best_t_idx]}")
 
             # 均值参考线
             ax.axhline(np.mean(ys), color="gray", linestyle="--", linewidth=0.8, alpha=0.6, label="Avg quality")

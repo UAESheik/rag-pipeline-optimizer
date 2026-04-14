@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-"""RAGChecker 风格诊断 + 真实 LLM Judge（Ollama 优先）。"""
-
 import json
 import os
+import re
 import urllib.request
 from typing import Dict, List, Tuple
 
@@ -24,6 +23,16 @@ def _overlap(a: str, b: str) -> float:
     return len(sa & sb) / len(sa | sb)
 
 
+def _extract_claims(answer: str) -> List[str]:
+    parts = re.split(r"[。.!?]\s+", answer.strip())
+    claims = [p.strip() for p in parts if len(p.strip().split()) >= 4]
+    return claims[:8]
+
+
+def _citation_doc_ids(answer: str) -> List[str]:
+    return [t.strip("[]") for t in answer.split() if t.startswith("[") and t.endswith("]")]
+
+
 def retrieval_bias_score(retrieved: List[RetrievedChunk]) -> Dict[str, object]:
     if not retrieved:
         return {"bias_detected": False, "top_doc": "", "top_doc_fraction": 0.0}
@@ -37,15 +46,26 @@ def retrieval_bias_score(retrieved: List[RetrievedChunk]) -> Dict[str, object]:
 
 def hallucination_score(answer: str, retrieved: List[RetrievedChunk]) -> Dict[str, object]:
     if not answer or not retrieved:
-        return {"hallucination_risk": "unknown", "unsupported_fraction": 1.0}
-    ctx = " ".join(c.text for c, _ in retrieved).lower()
-    tokens = [t for t in answer.lower().split() if len(t) > 3]
-    if not tokens:
-        return {"hallucination_risk": "low", "unsupported_fraction": 0.0}
-    unsupported = sum(1 for t in tokens if t not in ctx)
-    frac = round(unsupported / len(tokens), 3)
-    risk = "low" if frac < 0.2 else ("medium" if frac < 0.5 else "high")
-    return {"hallucination_risk": risk, "unsupported_fraction": frac}
+        return {"hallucination_risk": "unknown", "unsupported_fraction": 1.0, "claim_support": 0.0}
+
+    context = " ".join(c.text for c, _ in retrieved).lower()
+    claims = _extract_claims(answer)
+    if not claims:
+        return {"hallucination_risk": "low", "unsupported_fraction": 0.0, "claim_support": 1.0}
+
+    supported = 0
+    for cl in claims:
+        cl_tokens = [t for t in re.findall(r"[a-zA-Z0-9_]+", cl.lower()) if len(t) > 2]
+        if not cl_tokens:
+            continue
+        hit = sum(1 for t in cl_tokens if t in context) / len(cl_tokens)
+        if hit >= 0.5:
+            supported += 1
+
+    claim_support = round(supported / max(1, len(claims)), 3)
+    unsupported = round(1.0 - claim_support, 3)
+    risk = "low" if unsupported < 0.25 else ("medium" if unsupported < 0.55 else "high")
+    return {"hallucination_risk": risk, "unsupported_fraction": unsupported, "claim_support": claim_support}
 
 
 def query_drift_score(original_query: str, answer: str) -> Dict[str, object]:
@@ -129,6 +149,48 @@ def judge_groundedness_score(
         }
 
 
+def _failure_taxonomy(query: str, answer: str, retrieved: List[RetrievedChunk], report: Dict[str, object]) -> Dict[str, str]:
+    retrieval_failure_type = "none"
+    if not retrieved:
+        retrieval_failure_type = "no_retrieval"
+    elif bool(report.get("retrieval_bias", {}).get("bias_detected", False)):
+        retrieval_failure_type = "retrieval_bias"
+
+    citation_ids = _citation_doc_ids(answer)
+    retrieved_ids = {c.doc_id for c, _ in retrieved}
+    missing_citations = [cid for cid in citation_ids if cid not in retrieved_ids]
+    citation_failure_type = "none"
+    if not citation_ids:
+        citation_failure_type = "missing_citation"
+    elif missing_citations:
+        citation_failure_type = "citation_mismatch"
+
+    grounding_failure_type = "none"
+    hall = report.get("hallucination", {})
+    if hall.get("hallucination_risk") in ("medium", "high"):
+        grounding_failure_type = "unsupported_claims"
+
+    query_processing_failure_type = "none"
+    if report.get("query_drift", {}).get("drift_detected", False):
+        query_processing_failure_type = "query_drift"
+    elif len(query.split()) <= 2 and len(answer.split()) > 40:
+        query_processing_failure_type = "over_expansion"
+
+    citation_completeness = 0.0 if not answer else round(len(citation_ids) / max(1, len(_extract_claims(answer))), 4)
+    citation_binding = 0.0
+    if citation_ids:
+        citation_binding = round(len([x for x in citation_ids if x in retrieved_ids]) / len(citation_ids), 4)
+
+    return {
+        "retrieval_failure_type": retrieval_failure_type,
+        "grounding_failure_type": grounding_failure_type,
+        "citation_failure_type": citation_failure_type,
+        "query_processing_failure_type": query_processing_failure_type,
+        "citation_completeness": citation_completeness,
+        "citation_binding": citation_binding,
+    }
+
+
 def full_ragchecker_report(
     query: str,
     answer: str,
@@ -140,21 +202,29 @@ def full_ragchecker_report(
     drift = query_drift_score(query, answer)
     judge = judge_groundedness_score(query, answer, retrieved, use_llm_judge=use_llm_judge)
 
-    findings: List[str] = []
-    if bias["bias_detected"]:
-        findings.append(f"检索偏差: {bias['top_doc']} 占比 {bias['top_doc_fraction']}")
-    if hallucination["hallucination_risk"] in ("medium", "high"):
-        findings.append(f"幻觉风险 {hallucination['hallucination_risk']}: 无支撑 token 占比 {hallucination['unsupported_fraction']}")
-    if drift["drift_detected"]:
-        findings.append(f"查询偏移: 答案与查询重叠仅 {drift['query_answer_overlap']}")
-    if not findings:
-        findings.append("无明显问题")
-
-    return {
+    base = {
         "retrieval_bias": bias,
         "hallucination": hallucination,
         "query_drift": drift,
         "judge": judge,
+    }
+    taxonomy = _failure_taxonomy(query=query, answer=answer, retrieved=retrieved, report=base)
+
+    findings: List[str] = []
+    if taxonomy["retrieval_failure_type"] != "none":
+        findings.append(f"retrieval={taxonomy['retrieval_failure_type']}")
+    if taxonomy["grounding_failure_type"] != "none":
+        findings.append(f"grounding={taxonomy['grounding_failure_type']}")
+    if taxonomy["citation_failure_type"] != "none":
+        findings.append(f"citation={taxonomy['citation_failure_type']}")
+    if taxonomy["query_processing_failure_type"] != "none":
+        findings.append(f"query_proc={taxonomy['query_processing_failure_type']}")
+    if not findings:
+        findings.append("no_major_issue")
+
+    return {
+        **base,
+        **taxonomy,
         "findings_summary": " | ".join(findings),
     }
 

@@ -67,7 +67,7 @@ def _doc_recall(retrieved_ids: List[str], reference_ids: List[str]) -> float:
     return len(set(retrieved_ids) & set(reference_ids)) / len(set(reference_ids))
 
 
-def _groundedness_proxy(answer: str, retrieved: List[RetrievedChunk]) -> float:
+def _groundedness(answer: str, retrieved: List[RetrievedChunk]) -> float:
     if not answer or not retrieved:
         return 0.0
 
@@ -104,7 +104,7 @@ def _local_scores(query: str, answer: str, retrieved: List[RetrievedChunk]) -> D
             / len(retrieved),
             4,
         )
-    faithfulness = _groundedness_proxy(answer, retrieved)
+    faithfulness = _groundedness(answer, retrieved)
     return {
         "answer_relevancy": answer_relevancy,
         "context_relevancy": context_relevancy,
@@ -171,7 +171,7 @@ def case2_metrics(
     coverage = _doc_recall(retrieved_ids, reference_doc_ids)
 
     local_scores = _local_scores(query=query, answer=answer, retrieved=retrieved)
-    groundedness = max(_groundedness_proxy(answer, retrieved), local_scores["faithfulness"])
+    groundedness = max(_groundedness(answer, retrieved), local_scores["faithfulness"])
 
     cited = [t.strip("[]") for t in answer.split() if t.startswith("[") and t.endswith("]")]
     citation_quality = 0.0 if not retrieved_ids else round(len(set(cited) & set(retrieved_ids)) / len(set(retrieved_ids)), 4)
