@@ -62,7 +62,10 @@ class RAGOptimizer:
         ovt_cyc = _cycle(ss["chunking"]["overlap_type"])
         ovs_cyc = _cycle(ss["chunking"]["overlap_size"])
         temp_cyc = _cycle(ss["generation"].get("temperature", [0.0]))
+        prompt_cyc = _cycle(ss["generation"].get("prompt_template", ["standard"]))
+        maxtok_cyc = _cycle(ss["generation"].get("max_new_tokens", [256]))
         rm_cyc = _cycle(ss["reranking"]["model"])
+        rtop_cyc = _cycle(ss["reranking"].get("rerank_top_k", [self.top_k]))
 
         out: List[Dict[str, Any]] = []
         for idx, (retriever, strategy, size, rerank_style, rerank_en) in enumerate(primary):
@@ -90,10 +93,13 @@ class RAGOptimizer:
                 "generation": {
                     "answer_style": rerank_style,
                     "temperature": next(temp_cyc),
+                    "prompt_template": next(prompt_cyc),
+                    "max_new_tokens": next(maxtok_cyc),
                 },
                 "reranking": {
                     "enabled": rerank_en,
                     "model": next(rm_cyc),
+                    "rerank_top_k": next(rtop_cyc),
                 },
                 "query_processor": {
                     "rewrite": next(rew_cyc),
@@ -113,14 +119,20 @@ class RAGOptimizer:
 
         retriever_choices = ss["retrieval"]["retriever"]
         rerank_enabled_choices = ss["reranking"]["enabled"]
+        rerank_top_k_choices = ss["reranking"].get("rerank_top_k", [self.top_k])
         answer_style_choices = ss["generation"]["answer_style"]
+        prompt_template_choices = ss["generation"].get("prompt_template", ["standard"])
         temperature_choices = ss["generation"].get("temperature", [0.0])
+        max_new_tokens_choices = ss["generation"].get("max_new_tokens", [256])
 
         if active_case == 2:
             retriever_choices = [x for x in retriever_choices if x in ("bm25", "hybrid")] or ["bm25"]
             rerank_enabled_choices = [False]
-            answer_style_choices = ["citation_first"]
+            rerank_top_k_choices = [self.top_k]
+            answer_style_choices = ["citation_first", "concise_with_evidence"]
+            prompt_template_choices = ["strict_no_hallucination"]
             temperature_choices = [0.0]
+            max_new_tokens_choices = [128]
 
         return {
             "config_id": f"cfg_{trial.number:05d}",
@@ -131,6 +143,10 @@ class RAGOptimizer:
                 "overlap_size": trial.suggest_categorical("chunking_overlap_size", ss["chunking"]["overlap_size"]),
                 "semantic_min_size": trial.suggest_categorical("chunking_semantic_min_size", ss["chunking"]["semantic_min_size"]),
                 "semantic_max_size": trial.suggest_categorical("chunking_semantic_max_size", ss["chunking"]["semantic_max_size"]),
+                "window_size": trial.suggest_categorical("chunking_window_size", ss["chunking"].get("window_size", [3])),
+                "similarity_threshold": trial.suggest_categorical("chunking_similarity_threshold", ss["chunking"].get("similarity_threshold", [0.65])),
+                "preserve_table_as_markdown": trial.suggest_categorical("chunking_preserve_table_as_markdown", ss["chunking"].get("preserve_table_as_markdown", [True])),
+                "generate_image_caption": trial.suggest_categorical("chunking_generate_image_caption", ss["chunking"].get("generate_image_caption", [False])),
             },
             "retrieval": {
                 "retriever": trial.suggest_categorical("retrieval_retriever", retriever_choices),
@@ -148,10 +164,13 @@ class RAGOptimizer:
             "generation": {
                 "answer_style": trial.suggest_categorical("generation_answer_style", answer_style_choices),
                 "temperature": trial.suggest_categorical("generation_temperature", temperature_choices),
+                "prompt_template": trial.suggest_categorical("generation_prompt_template", prompt_template_choices),
+                "max_new_tokens": trial.suggest_categorical("generation_max_new_tokens", max_new_tokens_choices),
             },
             "reranking": {
                 "enabled": trial.suggest_categorical("reranking_enabled", rerank_enabled_choices),
                 "model": trial.suggest_categorical("reranking_model", ss["reranking"]["model"]),
+                "rerank_top_k": trial.suggest_categorical("reranking_rerank_top_k", rerank_top_k_choices),
             },
         }
 
@@ -194,16 +213,19 @@ class RAGOptimizer:
                 "semantic_max_size": ss["chunking"]["semantic_max_size"][0],
                 "window_size": _pick(ss["chunking"].get("window_size", [3])),
                 "similarity_threshold": _pick(ss["chunking"].get("similarity_threshold", [0.65])),
-                "preserve_table_as_markdown": True,
-                "generate_image_caption": False,
+                "preserve_table_as_markdown": _pick(ss["chunking"].get("preserve_table_as_markdown", [True])),
+                "generate_image_caption": _pick(ss["chunking"].get("generate_image_caption", [False])),
             },
             "generation": {
                 "answer_style": _pick(ss["generation"]["answer_style"]),
                 "temperature": _pick(ss["generation"].get("temperature", [0.0])),
+                "prompt_template": _pick(ss["generation"].get("prompt_template", ["standard"])),
+                "max_new_tokens": _pick(ss["generation"].get("max_new_tokens", [256])),
             },
             "reranking": {
                 "enabled": _pick(ss["reranking"]["enabled"]),
                 "model": _pick(ss["reranking"]["model"]),
+                "rerank_top_k": _pick(ss["reranking"].get("rerank_top_k", [self.top_k])),
             },
             "query_processor": {
                 "rewrite": _pick(ss["query_processor"]["rewrite"]),
@@ -233,6 +255,10 @@ class RAGOptimizer:
                     overlap_size=cfg["chunking"]["overlap_size"],
                     semantic_min_size=cfg["chunking"]["semantic_min_size"],
                     semantic_max_size=cfg["chunking"]["semantic_max_size"],
+                    preserve_table_as_markdown=bool(cfg["chunking"].get("preserve_table_as_markdown", True)),
+                    generate_image_caption=bool(cfg["chunking"].get("generate_image_caption", False)),
+                    window_size=int(cfg["chunking"].get("window_size", 3)),
+                    similarity_threshold=float(cfg["chunking"].get("similarity_threshold", 0.65)),
                     base_metadata=base_metadata,
                 )
             )
@@ -398,7 +424,6 @@ class RAGOptimizer:
 
             metadata_filter = self._build_metadata_filter(query=query, cfg=cfg, chunks=chunks)
 
-            retrieved = retriever.retrieve(query, top_k=effective_top_k, metadata_filter=metadata_filter)
             # 查询改写/分解：对多个子查询分别检索后合并去重
             qp = run_query_program(
                 query=query,
@@ -420,7 +445,13 @@ class RAGOptimizer:
 
             merged_items = sorted(merged_items, key=lambda x: x.score, reverse=True)[:effective_top_k]
             retrieved = [(it.chunk, it.score) for it in merged_items]
-            retrieved = rerank(retrieved, enabled=cfg["reranking"]["enabled"], query=query)
+            retrieved = rerank(
+                retrieved,
+                enabled=cfg["reranking"]["enabled"],
+                query=query,
+                model_name=cfg["reranking"].get("model", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
+                top_k=int(cfg["reranking"].get("rerank_top_k", self.top_k)),
+            )
             answer = generate_answer(
                 query=query,
                 retrieved=retrieved,
@@ -428,6 +459,8 @@ class RAGOptimizer:
                 temperature=cfg["generation"].get("temperature", 0.0),
                 llm_model=str(self.config.get("run", {}).get("llm_model", "qwen2.5:3b-instruct")),
                 use_llm=bool(self.config.get("run", {}).get("use_llm_generator", True)),
+                prompt_template=str(cfg["generation"].get("prompt_template", "standard")),
+                max_new_tokens=int(cfg["generation"].get("max_new_tokens", 256)),
             )
             if case_num == 2:
                 tokens = answer.split()
@@ -502,6 +535,7 @@ class RAGOptimizer:
                 sum(float(it.provenance.rrf_score) for it in merged_items) / max(1, len(merged_items)), 4
             ) if merged_items else 0.0
             metadata_filter_hit_rate = 1.0 if metadata_filter else 0.0
+            query_program_depth = len(qp.steps)
 
             result: Dict[str, Any] = {
                 "config_id": cfg["config_id"],
@@ -526,6 +560,7 @@ class RAGOptimizer:
                 "citation_binding": rc.get("citation_binding", 0.0),
                 "query_program_final_queries": " || ".join(qp.final_queries),
                 "query_program_execution_path": " > ".join(qp.execution_path),
+                "query_program_depth": query_program_depth,
                 "query_rewrite_usage": rewrite_used,
                 "decompose_branch_count": decompose_used,
                 "hyde_usage": hyde_used,
@@ -616,6 +651,9 @@ class RAGOptimizer:
                     "intent_driven_filter": cfg["query_processor"].get("intent_driven_filter", False),
                     "metadata_filter_enabled": cfg["retrieval"].get("metadata_filter_enabled", False),
                     "metadata_enrichment": cfg["retrieval"].get("metadata_enrichment", False),
+                    "rerank_top_k": cfg["reranking"].get("rerank_top_k", self.top_k),
+                    "prompt_template": cfg["generation"].get("prompt_template", "standard"),
+                    "max_new_tokens": cfg["generation"].get("max_new_tokens", 256),
                     **{k: _avg_metric(res["per_query"], k) for k in metric_cols},
                 }
                 run_summary_rows.append(row)
@@ -649,6 +687,9 @@ class RAGOptimizer:
                     "intent_driven_filter": cfg["query_processor"].get("intent_driven_filter", False),
                     "metadata_filter_enabled": cfg["retrieval"].get("metadata_filter_enabled", False),
                     "metadata_enrichment": cfg["retrieval"].get("metadata_enrichment", False),
+                    "rerank_top_k": cfg["reranking"].get("rerank_top_k", self.top_k),
+                    "prompt_template": cfg["generation"].get("prompt_template", "standard"),
+                    "max_new_tokens": cfg["generation"].get("max_new_tokens", 256),
                     **{k: _avg_metric(res["per_query"], k) for k in metric_cols},
                 }
                 run_summary_rows.append(row)
@@ -705,9 +746,9 @@ class RAGOptimizer:
             run_rows_with_case,
             [
                 "case_num", "config_id", "mean_composite", "trial_seconds",
-                "retriever", "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled",
+                "retriever", "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled", "rerank_top_k",
                 "query_rewrite_enabled", "query_decompose_enabled", "query_hyde_enabled", "intent_driven_filter",
-                "metadata_filter_enabled", "metadata_enrichment",
+                "metadata_filter_enabled", "metadata_enrichment", "prompt_template", "max_new_tokens",
                 *metric_cols,
             ],
         )
@@ -741,7 +782,8 @@ class RAGOptimizer:
             pareto_csv_path,
             pareto_rows,
             ["config_id", "mean_composite", "trial_seconds", "retriever",
-             "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled", *metric_cols],
+             "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled", "rerank_top_k",
+             "prompt_template", "max_new_tokens", *metric_cols],
         )
         self._write_pareto_plot(out_dir, pareto_rows, case_num)
 
