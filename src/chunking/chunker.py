@@ -210,10 +210,6 @@ def chunk_document(
     overlap_size: int = 100,
     semantic_min_size: int = 350,
     semantic_max_size: int = 650,
-    preserve_table_as_markdown: bool = True,
-    generate_image_caption: bool = False,
-    window_size: int = 3,
-    similarity_threshold: float = 0.65,
     base_metadata: Optional[Dict[str, object]] = None,
 ) -> List[Chunk]:
     """完整分块流程：结构解析→粗分块→语义细分→重叠注入。"""

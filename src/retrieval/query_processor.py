@@ -3,33 +3,16 @@ from __future__ import annotations
 """
 query_processor.py
 
-借鉴 DSPy 的核心设计思想：将查询改写视为"声明式程序"，
-通过 QuerySignature 描述输入/输出语义，通过 QueryModule 实现执行逻辑。
-
-与直接使用 DSPy 框架的区别：
-- 未引入 dspy 包，避免黑盒 LLM 调用与联网依赖
-- 自实现 Signature / Module 模式，保持可解释性与可审计性
-- 真实部署时可将 QueryModule.forward() 替换为 LLM 调用，接口不变
+借鉴 DSPy 的核心设计思想：将查询处理视为声明式 program，
+每一步都保留结构化中间结果，便于审计、诊断与优化。
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List
 
-
-# ─── DSPy 风格：声明式 Signature ────────────────────────────────────────────────
 
 @dataclass
 class QuerySignature:
-    """
-    描述查询改写任务的输入/输出语义（DSPy Signature 思路）。
-
-    Fields:
-        name        : 任务名称
-        description : 任务目标描述
-        input_fields: 输入字段说明
-        output_fields: 输出字段说明
-        strategy    : 实际执行策略
-    """
     name: str
     description: str
     input_fields: Dict[str, str] = field(default_factory=dict)
@@ -37,7 +20,28 @@ class QuerySignature:
     strategy: str = "expand"
 
 
-# 三种预定义 Signature（可扩展）
+@dataclass
+class QueryStepResult:
+    step_name: str
+    strategy: str
+    input_queries: List[str]
+    output_queries: List[str]
+    applied: bool
+    notes: str = ""
+
+
+@dataclass
+class QueryProgramResult:
+    original_query: str
+    final_queries: List[str]
+    rewritten_queries: List[str] = field(default_factory=list)
+    decomposed_queries: List[str] = field(default_factory=list)
+    hypothetical_queries: List[str] = field(default_factory=list)
+    filtered_queries: List[str] = field(default_factory=list)
+    execution_path: List[str] = field(default_factory=list)
+    steps: List[QueryStepResult] = field(default_factory=list)
+
+
 EXPAND_SIG = QuerySignature(
     name="QueryExpand",
     description="通过同义词/上位词扩展查询，提升稀疏检索覆盖率",
@@ -62,42 +66,41 @@ HYDE_SIG = QuerySignature(
     strategy="hypothetical",
 )
 
+INTENT_FILTER_SIG = QuerySignature(
+    name="IntentFilter",
+    description="过滤过泛或偏离问题意图的查询分支",
+    input_fields={"queries": "待过滤查询列表"},
+    output_fields={"queries": "保留后的查询列表"},
+    strategy="intent_filter",
+)
 
-# ─── DSPy 风格：Module（执行逻辑与签名解耦）──────────────────────────────────────
 
 class QueryModule:
-    """
-    执行查询改写的 Module（借鉴 DSPy Module 设计）。
-
-    - forward() 对应 DSPy 的 __call__ / predict 逻辑
-    - 当前为规则实现（可替换为 dspy.Predict(sig) 调用）
-    - 规则透明可审计，便于面试讲解与离线运行
-    """
-
     def __init__(self, sig: QuerySignature):
         self.sig = sig
 
-    def forward(self, query: str) -> List[str]:
-        """根据 Signature.strategy 执行对应改写逻辑。"""
-        query = query.strip()
-        if not query:
-            return [query]
-
+    def run(self, queries: List[str]) -> QueryStepResult:
+        inputs = list(queries)
         if self.sig.strategy == "decompose":
-            return self._decompose(query)
-        if self.sig.strategy == "hypothetical":
-            return self._hypothetical(query)
-        return self._expand(query)  # 默认 expand
-
-    # ── 内部实现（规则实现，可替换 LLM 调用）────────────────────────────────────
+            outputs = self._decompose_many(inputs)
+        elif self.sig.strategy == "hypothetical":
+            outputs = self._hypothetical_many(inputs)
+        elif self.sig.strategy == "intent_filter":
+            outputs = self._intent_filter(inputs)
+        else:
+            outputs = self._expand_many(inputs)
+        outputs = list(dict.fromkeys(q for q in outputs if q.strip()))
+        return QueryStepResult(
+            step_name=self.sig.name,
+            strategy=self.sig.strategy,
+            input_queries=inputs,
+            output_queries=outputs or inputs,
+            applied=outputs != inputs,
+        )
 
     @staticmethod
     def _expand(query: str) -> List[str]:
-        """
-        关键词扩展（AutoRAG 候选查询生成思路）。
-        扩展表为显式映射，面试可展示业务知识注入位置。
-        """
-        _EXPANSION_MAP: Dict[str, str] = {
+        expansion_map: Dict[str, str] = {
             "kyc": "know your customer identity verification",
             "fee": "charge cost pricing tariff",
             "document": "file record paper",
@@ -105,70 +108,115 @@ class QueryModule:
             "requirement": "criteria condition prerequisite",
             "credit": "loan lending creditworthiness",
             "fraud": "suspicious activity money laundering",
+            "dispute": "chargeback complaint card dispute",
         }
         tokens = query.lower().split()
-        extras = [_EXPANSION_MAP[tok] for tok in tokens if tok in _EXPANSION_MAP]
+        extras = [expansion_map[tok] for tok in tokens if tok in expansion_map]
         if extras:
-            expanded = query + " " + " ".join(extras)
-            return [query, expanded]
+            return [query, query + " " + " ".join(extras)]
         return [query]
+
+    @classmethod
+    def _expand_many(cls, queries: List[str]) -> List[str]:
+        out: List[str] = []
+        for query in queries:
+            out.extend(cls._expand(query.strip()))
+        return out
 
     @staticmethod
     def _decompose(query: str) -> List[str]:
-        """按连接词拆分复合问题为子问题。"""
         import re
-        parts = re.split(
-            r"\band\b|\bor\b|\bas well as\b|，|、",
-            query,
-            flags=re.IGNORECASE,
-        )
+
+        parts = re.split(r"\band\b|\bor\b|\bas well as\b|，|、", query, flags=re.IGNORECASE)
         sub_queries = [p.strip() for p in parts if p.strip()]
         return sub_queries if len(sub_queries) > 1 else [query]
 
+    @classmethod
+    def _decompose_many(cls, queries: List[str]) -> List[str]:
+        out: List[str] = []
+        for query in queries:
+            out.extend(cls._decompose(query.strip()))
+        return out
+
     @staticmethod
     def _hypothetical(query: str) -> List[str]:
-        """
-        HyDE：构造假想文档前缀，引导稠密检索语义对齐。
-        参考 Gao et al. (2022) Precise Zero-Shot Dense Retrieval without Relevance Labels。
-        """
-        return [f"A document that answers the question: {query}"]
+        return [query, f"A document that answers the question: {query}"]
 
+    @classmethod
+    def _hypothetical_many(cls, queries: List[str]) -> List[str]:
+        out: List[str] = []
+        for query in queries:
+            out.extend(cls._hypothetical(query.strip()))
+        return out
 
-# ─── 预实例化三个模块（复用，避免重复构造）────────────────────────────────────────
+    @staticmethod
+    def _intent_filter(queries: List[str]) -> List[str]:
+        kept: List[str] = []
+        for query in queries:
+            q = query.strip()
+            if len(q.split()) < 2:
+                continue
+            if q.lower().startswith("a document that answers") and len(q.split()) < 8:
+                continue
+            kept.append(q)
+        return kept or queries
+
 
 _EXPAND_MODULE = QueryModule(EXPAND_SIG)
 _DECOMPOSE_MODULE = QueryModule(DECOMPOSE_SIG)
 _HYDE_MODULE = QueryModule(HYDE_SIG)
+_INTENT_FILTER_MODULE = QueryModule(INTENT_FILTER_SIG)
 
 
-# ─── 向后兼容接口（optimizer.py 调用入口不变）──────────────────────────────────────
+def run_query_program(
+    query: str,
+    rewrite: bool,
+    decompose: bool,
+    use_hyde: bool = False,
+    intent_driven_filter: bool = False,
+) -> QueryProgramResult:
+    result = QueryProgramResult(original_query=query, final_queries=[query])
+    current_queries = [query]
+
+    if rewrite:
+        step = _EXPAND_MODULE.run(current_queries)
+        result.steps.append(step)
+        result.execution_path.append(step.step_name)
+        result.rewritten_queries = [q for q in step.output_queries if q != query]
+        current_queries = step.output_queries
+
+    if decompose:
+        step = _DECOMPOSE_MODULE.run(current_queries)
+        result.steps.append(step)
+        result.execution_path.append(step.step_name)
+        result.decomposed_queries = [q for q in step.output_queries if q not in result.rewritten_queries and q != query]
+        current_queries = step.output_queries
+
+    if use_hyde:
+        step = _HYDE_MODULE.run(current_queries)
+        result.steps.append(step)
+        result.execution_path.append(step.step_name)
+        result.hypothetical_queries = [q for q in step.output_queries if q.lower().startswith("a document that answers")]
+        current_queries = step.output_queries
+
+    if intent_driven_filter:
+        step = _INTENT_FILTER_MODULE.run(current_queries)
+        result.steps.append(step)
+        result.execution_path.append(step.step_name)
+        result.filtered_queries = step.output_queries
+        current_queries = step.output_queries
+
+    result.final_queries = list(dict.fromkeys(q for q in current_queries if q.strip())) or [query]
+    return result
+
 
 def rewrite_query(query: str, strategy: str = "expand") -> List[str]:
-    """
-    查询改写接口（保持向后兼容）。
-
-    strategy 选项：
-      - "expand"      : QueryExpand Signature
-      - "decompose"   : QueryDecompose Signature
-      - "hypothetical": QueryHyDE Signature
-    """
-    sig_map = {
-        "expand": _EXPAND_MODULE,
-        "decompose": _DECOMPOSE_MODULE,
-        "hypothetical": _HYDE_MODULE,
-    }
-    module = sig_map.get(strategy, _EXPAND_MODULE)
-    return module.forward(query)
+    if strategy == "decompose":
+        return _DECOMPOSE_MODULE.run([query]).output_queries
+    if strategy == "hypothetical":
+        return _HYDE_MODULE.run([query]).output_queries
+    return _EXPAND_MODULE.run([query]).output_queries
 
 
 def apply_query_processor(query: str, rewrite: bool, decompose: bool) -> List[str]:
-    """统一查询处理入口：按配置决定是否改写/分解。"""
-    queries = [query]
-    if rewrite:
-        queries = rewrite_query(query, strategy="expand")
-    if decompose:
-        decomposed: List[str] = []
-        for q in queries:
-            decomposed.extend(rewrite_query(q, strategy="decompose"))
-        queries = list(dict.fromkeys(decomposed))  # 去重保序
-    return queries if queries else [query]
+    return run_query_program(query, rewrite=rewrite, decompose=decompose).final_queries
