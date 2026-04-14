@@ -196,6 +196,8 @@ def _inject_overlap(
         new_text = (tail + " " + curr.text).strip()
         new_meta = dict(curr.metadata)
         new_meta["overlap_from"] = prev.chunk_id
+        new_meta["adjacent_prev"] = prev.chunk_id
+        new_meta["adjacent_next"] = ""
         result.append(Chunk(chunk_id=curr.chunk_id, doc_id=curr.doc_id, text=new_text, metadata=new_meta))
 
     return result
@@ -211,10 +213,18 @@ def chunk_document(
     semantic_min_size: int = 350,
     semantic_max_size: int = 650,
     base_metadata: Optional[Dict[str, object]] = None,
+    preserve_table_as_markdown: bool = True,
+    generate_image_caption: bool = False,
+    window_size: int = 3,
+    similarity_threshold: float = 0.65,
 ) -> List[Chunk]:
     """完整分块流程：结构解析→粗分块→语义细分→重叠注入。"""
     base_metadata = dict(base_metadata or {})
     base_metadata.setdefault("section_title", base_metadata.pop("title", ""))
+    base_metadata.setdefault("window_size", window_size)
+    base_metadata.setdefault("similarity_threshold", similarity_threshold)
+    base_metadata.setdefault("preserve_table_as_markdown", preserve_table_as_markdown)
+    base_metadata.setdefault("generate_image_caption", generate_image_caption)
 
     sections = _parse_sections(text)
 

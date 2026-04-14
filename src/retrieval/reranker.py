@@ -31,6 +31,7 @@ def rerank(
     enabled: bool,
     query: str = "",
     model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    top_k: Optional[int] = None,
 ) -> List[RetrievedChunk]:
     """重排序：优先使用真实 CrossEncoder，不可用时回退轻量 TF-IDF CE。"""
     if not enabled or not results:
@@ -47,7 +48,8 @@ def rerank(
                 # 原始分数（BM25/dense）与 CE 分数加权融合
                 combined = round(0.3 * float(orig_score) + 0.7 * float(ce_score), 6)
                 rescored.append((chunk, combined))
-            return sorted(rescored, key=lambda x: x[1], reverse=True)
+            ranked = sorted(rescored, key=lambda x: x[1], reverse=True)
+            return ranked[:top_k] if top_k else ranked
 
         # 回退：TF-IDF CE 代理
         from sklearn.feature_extraction.text import TfidfVectorizer
@@ -66,7 +68,9 @@ def rerank(
             ce_score = _ce_proxy(query, chunk.text)
             combined = round(0.3 * orig_score + 0.7 * ce_score, 6)
             rescored.append((chunk, combined))
-        return sorted(rescored, key=lambda x: x[1], reverse=True)
+        ranked = sorted(rescored, key=lambda x: x[1], reverse=True)
+        return ranked[:top_k] if top_k else ranked
 
     # 无 query 时退化为按分数排序
-    return sorted(results, key=lambda x: x[1], reverse=True)
+    ranked = sorted(results, key=lambda x: x[1], reverse=True)
+    return ranked[:top_k] if top_k else ranked

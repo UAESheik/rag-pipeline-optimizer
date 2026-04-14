@@ -27,6 +27,13 @@ class RetrievalProvenance:
 
 
 @dataclass
+class RetrievalStageResult:
+    stage: str
+    candidates: List[Tuple[int, float]]
+    source: str
+
+
+@dataclass
 class RetrievedItem:
     chunk: Chunk
     score: float
@@ -159,12 +166,7 @@ class Retriever:
 
         return min(0.2, bonus), matched_entities, list(dict.fromkeys(matched_fields))
 
-    def retrieve_with_provenance(
-        self,
-        query: str,
-        top_k: int = 5,
-        metadata_filter: Optional[Dict[str, str]] = None,
-    ) -> List[RetrievedItem]:
+    def _generate_candidates(self, query: str, metadata_filter: Optional[Dict[str, str]] = None) -> Dict[str, List[Tuple[int, float]]]:
         metadata_filter = metadata_filter or {}
         valid_indices = [
             idx
@@ -172,22 +174,23 @@ class Retriever:
             if all(str(c.metadata.get(k, "")).lower().find(str(v).lower()) >= 0 for k, v in metadata_filter.items())
         ]
         valid_set = set(valid_indices)
-
         bm25_ranked = [(i, s) for i, s in self._ranked_bm25(query) if i in valid_set]
         dense_ranked = [(i, s) for i, s in self._ranked_dense(query) if i in valid_set]
-        bm25_pos = {idx: (r + 1, score) for r, (idx, score) in enumerate(bm25_ranked)}
-        dense_pos = {idx: (r + 1, score) for r, (idx, score) in enumerate(dense_ranked)}
+        return {"bm25": bm25_ranked, "dense": dense_ranked}
 
+    def _fuse_candidates(self, candidate_map: Dict[str, List[Tuple[int, float]]]) -> Tuple[List[Tuple[int, float]], str]:
+        bm25_ranked = candidate_map.get("bm25", [])
+        dense_ranked = candidate_map.get("dense", [])
         if self.retriever_type == "bm25":
-            fused = bm25_ranked
-            source = "bm25"
-        elif self.retriever_type == "dense":
-            fused = dense_ranked
-            source = "dense"
-        else:
-            fused = _rrf_merge([bm25_ranked, dense_ranked])
-            source = "hybrid_rrf"
+            return bm25_ranked, "bm25"
+        if self.retriever_type == "dense":
+            return dense_ranked, "dense"
+        return _rrf_merge([bm25_ranked, dense_ranked]), "hybrid_rrf"
 
+    def _apply_metadata_scoring(self, query: str, fused: List[Tuple[int, float]], source: str) -> List[RetrievedItem]:
+        candidate_map = {"bm25": self._ranked_bm25(query), "dense": self._ranked_dense(query)}
+        bm25_pos = {idx: (r + 1, score) for r, (idx, score) in enumerate(candidate_map["bm25"])}
+        dense_pos = {idx: (r + 1, score) for r, (idx, score) in enumerate(candidate_map["dense"])}
         items: List[RetrievedItem] = []
         for idx, base_score in fused:
             chunk = self.chunks[idx]
@@ -212,8 +215,17 @@ class Retriever:
                     ),
                 )
             )
+        return sorted(items, key=lambda x: x.score, reverse=True)
 
-        items.sort(key=lambda x: x.score, reverse=True)
+    def retrieve_with_provenance(
+        self,
+        query: str,
+        top_k: int = 5,
+        metadata_filter: Optional[Dict[str, str]] = None,
+    ) -> List[RetrievedItem]:
+        candidate_map = self._generate_candidates(query, metadata_filter)
+        fused, source = self._fuse_candidates(candidate_map)
+        items = self._apply_metadata_scoring(query, fused, source)
         return items[:top_k]
 
     def retrieve(

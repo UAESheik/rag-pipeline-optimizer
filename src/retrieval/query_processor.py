@@ -8,7 +8,7 @@ query_processor.py
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Protocol
 
 
 @dataclass
@@ -75,7 +75,14 @@ INTENT_FILTER_SIG = QuerySignature(
 )
 
 
-class QueryModule:
+class QueryModule(Protocol):
+    sig: QuerySignature
+
+    def run(self, queries: List[str]) -> QueryStepResult:
+        ...
+
+
+class RuleBasedQueryModule:
     def __init__(self, sig: QuerySignature):
         self.sig = sig
 
@@ -96,6 +103,7 @@ class QueryModule:
             input_queries=inputs,
             output_queries=outputs or inputs,
             applied=outputs != inputs,
+            notes=f"rule_based::{self.sig.strategy}",
         )
 
     @staticmethod
@@ -162,10 +170,10 @@ class QueryModule:
         return kept or queries
 
 
-_EXPAND_MODULE = QueryModule(EXPAND_SIG)
-_DECOMPOSE_MODULE = QueryModule(DECOMPOSE_SIG)
-_HYDE_MODULE = QueryModule(HYDE_SIG)
-_INTENT_FILTER_MODULE = QueryModule(INTENT_FILTER_SIG)
+_EXPAND_MODULE = RuleBasedQueryModule(EXPAND_SIG)
+_DECOMPOSE_MODULE = RuleBasedQueryModule(DECOMPOSE_SIG)
+_HYDE_MODULE = RuleBasedQueryModule(HYDE_SIG)
+_INTENT_FILTER_MODULE = RuleBasedQueryModule(INTENT_FILTER_SIG)
 
 
 def run_query_program(
@@ -220,3 +228,41 @@ def rewrite_query(query: str, strategy: str = "expand") -> List[str]:
 
 def apply_query_processor(query: str, rewrite: bool, decompose: bool) -> List[str]:
     return run_query_program(query, rewrite=rewrite, decompose=decompose).final_queries
+
+
+def compile_query_program(
+    rewrite: bool,
+    decompose: bool,
+    use_hyde: bool = False,
+    intent_driven_filter: bool = False,
+) -> List[QuerySignature]:
+    compiled: List[QuerySignature] = []
+    if rewrite:
+        compiled.append(EXPAND_SIG)
+    if decompose:
+        compiled.append(DECOMPOSE_SIG)
+    if use_hyde:
+        compiled.append(HYDE_SIG)
+    if intent_driven_filter:
+        compiled.append(INTENT_FILTER_SIG)
+    return compiled
+
+
+def optimize_query_program(
+    query: str,
+    rewrite: bool,
+    decompose: bool,
+    use_hyde: bool = False,
+    intent_driven_filter: bool = False,
+    trace: bool = False,
+) -> QueryProgramResult:
+    result = run_query_program(
+        query=query,
+        rewrite=rewrite,
+        decompose=decompose,
+        use_hyde=use_hyde,
+        intent_driven_filter=intent_driven_filter,
+    )
+    if trace and not result.execution_path:
+        result.execution_path.append("no_op")
+    return result
