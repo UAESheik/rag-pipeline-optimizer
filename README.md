@@ -396,7 +396,7 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 - `QuerySignature` / `QueryStepResult` / `QueryProgramResult`：声明查询程序及中间结果结构
 - `run_query_program()`：将 rewrite / decompose / HyDE / intent filter 组合为可追踪执行路径
 - 预定义 Signature：`EXPAND_SIG` / `DECOMPOSE_SIG` / `HYDE_SIG` / `INTENT_FILTER_SIG`
-- 当前实现是 DSPy 风格的声明式查询程序，自实现了可组合执行路径与结构化中间结果；接口已预留 LLM 版本扩展，但当前默认仍以规则驱动为主
+- 当前实现是 DSPy 风格的声明式查询程序，自实现了可组合执行路径与结构化中间结果
 
 **非黑盒说明：** 不引入 `dspy` 包；若后续接入 LLM 改写，可在不改变外部调用方式的情况下替换内部规则实现，并先在验证集对比改写前后 `context_recall` 变化。
 
@@ -420,7 +420,7 @@ set RAG_OPT_OLLAMA_BASE_URL=http://127.0.0.1:11434
 - `_metadata_bonus()`：实体/标题/source 等字段与 query 命中后加分，真实影响排序
 - `retrieve_with_provenance()`：保留 metadata bonus 与命中字段证据，便于审计
 - `_build_metadata_filter()`：根据 `metadata_filter_fields` 从 query 自动匹配 metadata 条件（非硬编码）
-- 该模块实现了实体感知与元数据感知的检索增强，能让 metadata 真正参与排序与过滤；当前属于 LightRAG 风格的轻量增强实现，而非完整图结构检索系统
+- 该模块实现了实体感知与元数据感知的检索增强，能让 metadata 真正参与排序与过滤
 - 生产替换：将 `_detect_entities()` 换为 spaCy / transformers NER，接口不变
 
 ### 9.5 裁判模型（LLM-as-Judge）接地性检查
