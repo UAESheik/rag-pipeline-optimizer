@@ -1,7 +1,11 @@
 Query: What controls are important before sending CRM data to an external model?
 
-Answer: Based on the provided context, important controls before sending CRM data to an external model include: [D001] Using the latest source of truth from product policy documents and fee schedules. This ensures that the data being sent is accurate and up-to-date. [D002] Masking personal data fields before external model calls. This protects customer privacy and adheres to regulatory requirements. No specific controls are mentioned for CRM data specifically before sending it to an external model, but [D008] suggests that RAG systems improve retrieval quality by tuning various parameters such as chunk size, overlap, metadata enrichment, hybrid retrieval, reranking, and query rewriting. While these are not directly related to CRM data, they could be applied to ensure the quality of data
+Answer: Before sending CRM data to an external model, important controls include masking personal data fields [D001], and ensuring the latest source of truth from product policy documents and fee schedules are used [D001]. Additionally, for Singapore savings accounts, fall-below fees depend on average daily balance and customer segment, with some premium segments being exempt [D003]. However, there is no direct evidence cited in the provided context to mention controls specifically related to transaction monitoring alerts or card disputes. Therefore, the following citations are based on the given information:
 
-Composite: 0.553
+- Masking personal data fields: [D001]
+- Latest source of truth from product policy documents and fee schedules: [D001]
+- Singapore savings account fall-below fees: [D003]
+
+Composite: 0.4248
 Failure: 答案与证据绑定不足
-RAGChecker: 幻觉风险 high: 无支撑 token 占比 0.535
+RAGChecker: grounding=unsupported_claims | citation=duplicate_citation

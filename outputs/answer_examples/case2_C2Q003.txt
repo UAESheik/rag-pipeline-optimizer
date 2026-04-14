@@ -1,7 +1,12 @@
 Query: What should a bank check before issuing provisional credit for a card dispute?
 
-Answer: [D002] [D003] [D004] [D007] [D008] For card disputes, provisional credit may be issued after intake if required evidence is received and fraud indicators are not contradictory. Chargeback windows vary by network.
+Answer: To check before issuing provisional credit for a card dispute, a bank should follow these steps based on the provided context:
+
+1. Ensure that required evidence has been received. [D007]
+2. Verify that there are no fraud indicators that contradict each other. [D007]
+
+These two points are directly supported by the context provided, which states that provisional credit may be issued after intake if required evidence is received and fraud indicators are not contradictory.
 
-Composite: 0.5053
+Composite: 0.2919
 Failure: 答案与证据绑定不足
-RAGChecker: 幻觉风险 medium: 无支撑 token 占比 0.227
+RAGChecker: grounding=unsupported_claims | citation=duplicate_citation

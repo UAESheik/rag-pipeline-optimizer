@@ -1,7 +1,7 @@
 Query: How should evaluation change when no reference answer exists?
 
-Answer: When no reference answer exists, evaluation should emphasize retrieval coverage, citation quality, answer groundedness, and model-based pairwise judgment with human spot checks. [D010]
+Answer: When no reference answer exists, evaluation should emphasize retrieval coverage, citation quality, answer groundedness, and model-based pairwise judgment with human spot checks. [D010] In evaluation datasets, the relevant context should be compared with retrieved passages. Final answers should be compared with reference answers using exact match and semantic similarity where appropriate. [D009] A transaction monitoring alert may be escalated when pattern scores exceed threshold, when sanctions-related entities are detected, or when structuring behavior is observed across linked accounts. [D005] A retail bank CRM assistant should use the latest source of truth from product policy documents and fee schedules. Personal data fields must be masked before external model calls. [D001] Mortgage prepayment penalties depend on product type, fixed-rate period, and local regulation. Waivers may apply for hardship cases approved by credit risk. [D002] For Singapore savings accounts, fall-below fees depend on average daily balance and customer segment. Some premium segments are exempt. [D003]
 
-Composite: 0.5912
-Failure: 生成存在幻觉风险
-RAGChecker: 无明显问题
+Composite: 0.7526
+Failure: 通过
+RAGChecker: query_proc=query_drift

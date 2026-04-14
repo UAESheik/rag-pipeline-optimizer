@@ -2,6 +2,6 @@ Query: What is the KYC refresh interval for a standard-risk retail customer?
 
 Answer: The KYC refresh interval for a standard-risk retail customer is every 36 months, unless a trigger event occurs earlier. [D004]
 
-Composite: 0.5554
+Composite: 0.5772
 Failure: 生成存在幻觉风险
-RAGChecker: 幻觉风险 medium: 无支撑 token 占比 0.231
+RAGChecker: query_proc=under_decomposition
