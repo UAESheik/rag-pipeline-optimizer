@@ -28,7 +28,8 @@
     "query_processor": {
       "rewrite": [false, true],
       "decompose": [false, true],
-      "intent_driven_filter": [false, true]
+      "intent_driven_filter": [false, true],
+      "use_hyde": [false, true]
     },
     "generation": {
       "temperature": [0.0, 0.1, 0.2],
