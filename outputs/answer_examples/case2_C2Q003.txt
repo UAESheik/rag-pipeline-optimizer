@@ -1,12 +1,11 @@
 Query: What should a bank check before issuing provisional credit for a card dispute?
 
-Answer: To check before issuing provisional credit for a card dispute, a bank should follow these steps based on the provided context:
+Answer: To issue provisional credit for a card dispute, a bank should check the following before intake:
 
-1. Ensure that required evidence has been received. [D007]
-2. Verify that there are no fraud indicators that contradict each other. [D007]
+[D007] - required evidence is received and fraud indicators are not contradictory.
 
-These two points are directly supported by the context provided, which states that provisional credit may be issued after intake if required evidence is received and fraud indicators are not contradictory.
+Therefore, the bank should ensure that required evidence is received and that there are no fraud indicators that contradict each other before issuing provisional credit. This ensures that the credit issuance complies with the policy of requiring necessary evidence and avoiding issuing provisional credit if there are any contradictions in fraud indicators.
 
-Composite: 0.2919
+Composite: 0.2739
 Failure: 答案与证据绑定不足
-RAGChecker: grounding=unsupported_claims | citation=duplicate_citation
+RAGChecker: grounding=unsupported_claims

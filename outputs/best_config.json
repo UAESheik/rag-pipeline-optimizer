@@ -40,53 +40,53 @@
       "use_hyde": false,
       "intent_driven_filter": true
     },
-    "train_score": 0.6308,
-    "holdout_score": 0.6359,
-    "overfit_gap": -0.0051
+    "train_score": 0.6306,
+    "holdout_score": 0.6205,
+    "overfit_gap": 0.0101
   },
   "case2": {
-    "config_id": "cfg_00047",
+    "config_id": "cfg_00012",
     "retrieval": {
       "retriever": "bm25",
-      "embedding_model": "bge-small",
+      "embedding_model": "e5-base",
       "metadata_filter_enabled": true,
-      "metadata_enrichment": false,
+      "metadata_enrichment": true,
       "metadata_filter_fields": [
         "section_title",
         "type"
       ]
     },
     "chunking": {
-      "strategy": "semantic",
+      "strategy": "sentence",
       "size": 384,
       "overlap_type": "token",
       "overlap_size": 128,
       "semantic_min_size": 200,
       "semantic_max_size": 500,
       "window_size": 5,
-      "similarity_threshold": 0.55,
+      "similarity_threshold": 0.75,
       "preserve_table_as_markdown": true,
-      "generate_image_caption": true
+      "generate_image_caption": false
     },
     "generation": {
-      "answer_style": "concise",
-      "temperature": 0.2,
+      "answer_style": "citation_first",
+      "temperature": 0.0,
       "prompt_template": "standard",
       "max_new_tokens": 256
     },
     "reranking": {
-      "enabled": false,
+      "enabled": true,
       "model": "bge-reranker-base",
-      "rerank_top_k": 3
+      "rerank_top_k": 10
     },
     "query_processor": {
       "rewrite": true,
-      "decompose": false,
+      "decompose": true,
       "use_hyde": false,
-      "intent_driven_filter": false
+      "intent_driven_filter": true
     },
-    "train_score": 0.4072,
-    "holdout_score": 0.228,
-    "overfit_gap": 0.1792
+    "train_score": 0.3126,
+    "holdout_score": 0.2466,
+    "overfit_gap": 0.066
   }
 }

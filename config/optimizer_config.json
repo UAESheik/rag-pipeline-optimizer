@@ -46,11 +46,11 @@
       "context_relevancy": 0.01
     },
     "case2_weights": {
-      "retrieval_coverage_proxy": 0.03,
-      "groundedness": 0.47,
-      "citation_quality": 0.45,
-      "answer_relevancy": 0.03,
-      "context_relevancy": 0.02
+      "retrieval_coverage_proxy": 0.15,
+      "groundedness": 0.30,
+      "citation_quality": 0.15,
+      "answer_relevancy": 0.25,
+      "context_relevancy": 0.15
     },
     "judge_weight": 0.01
   },
