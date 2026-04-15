@@ -785,7 +785,7 @@ class RAGOptimizer:
              "embedding_model", "chunk_strategy", "chunk_size", "rerank_enabled", "rerank_top_k",
              "prompt_template", "max_new_tokens", *metric_cols],
         )
-        self._write_pareto_plot(out_dir, pareto_rows, case_num)
+        self._write_pareto_plot(out_dir, pareto_rows, case_num, best_cfg)
 
         if bool(self.config.get("run", {}).get("mlflow_enabled", False)):
             self._log_mlflow_case(
@@ -848,12 +848,13 @@ class RAGOptimizer:
         self._active_case_num = None
 
 
-    def _write_pareto_plot(self, out_dir: Path, rows: List[Dict[str, Any]], case_num: int) -> None:
+    def _write_pareto_plot(self, out_dir: Path, rows: List[Dict[str, Any]], case_num: int, best_cfg: Dict[str, Any]) -> None:
         """
-        输出 Pareto 散点图（质量 vs 延迟），含以下增强可视化：
+        输出 Pareto 散点图（质量 vs 延迟），并同时标出最终选择点。
         - 每个点标注 config_id
         - 颜色映射 mean_composite 高低（越黄越优）
         - 标注最优质量点（Best Quality）与最低延迟点（Fastest）
+        - 标注最终选择点（Selected）
         - 横轴/纵轴带参考线（均值）
         - 图注说明 Pareto 前沿含义
         """
@@ -902,6 +903,23 @@ class RAGOptimizer:
             ax.scatter([xs[best_t_idx]], [ys[best_t_idx]], s=120, marker="D",
                        color="steelblue", zorder=5, label=f"Fastest: {labels[best_t_idx]}")
 
+            # 标注最终选择点
+            selected_id = str(best_cfg.get("config_id", ""))
+            for x, y, lab in zip(xs, ys, labels):
+                if lab == selected_id:
+                    ax.scatter([x], [y], s=220, marker="P", color="crimson", zorder=6,
+                               label=f"Selected: {selected_id}")
+                    ax.annotate(
+                        f"Selected\n{selected_id}",
+                        (x, y),
+                        textcoords="offset points",
+                        xytext=(10, -14),
+                        fontsize=7.5,
+                        fontweight="bold",
+                        color="crimson",
+                    )
+                    break
+
             # 均值参考线
             ax.axhline(np.mean(ys), color="gray", linestyle="--", linewidth=0.8, alpha=0.6, label="Avg quality")
             ax.axvline(np.mean(xs), color="gray", linestyle=":", linewidth=0.8, alpha=0.6, label="Avg latency")
@@ -911,7 +929,7 @@ class RAGOptimizer:
             ax.set_ylabel("mean_composite (higher = better)", fontsize=10)
             ax.set_title(
                 f"Pareto Frontier: Quality vs Latency  [{case_label}]\n"
-                f"* = Best Quality config    D = Fastest config",
+                f"* = Best Quality config    D = Fastest config    P = Selected config",
                 fontsize=10,
             )
             ax.legend(fontsize=8, loc="lower right")
