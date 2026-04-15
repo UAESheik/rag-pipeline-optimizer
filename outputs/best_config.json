@@ -37,18 +37,18 @@
     "query_processor": {
       "rewrite": true,
       "decompose": false,
-      "use_hyde": false,
+      "use_hyde": true,
       "intent_driven_filter": true
     },
-    "train_score": 0.6306,
-    "holdout_score": 0.6205,
-    "overfit_gap": 0.0101
+    "train_score": 0.6281,
+    "holdout_score": 0.5554,
+    "overfit_gap": 0.0727
   },
   "case2": {
-    "config_id": "cfg_00012",
+    "config_id": "cfg_00008",
     "retrieval": {
-      "retriever": "bm25",
-      "embedding_model": "e5-base",
+      "retriever": "dense",
+      "embedding_model": "bge-small",
       "metadata_filter_enabled": true,
       "metadata_enrichment": true,
       "metadata_filter_fields": [
@@ -60,33 +60,33 @@
       "strategy": "sentence",
       "size": 384,
       "overlap_type": "token",
-      "overlap_size": 128,
+      "overlap_size": 100,
       "semantic_min_size": 200,
       "semantic_max_size": 500,
-      "window_size": 5,
+      "window_size": 3,
       "similarity_threshold": 0.75,
-      "preserve_table_as_markdown": true,
+      "preserve_table_as_markdown": false,
       "generate_image_caption": false
     },
     "generation": {
-      "answer_style": "citation_first",
+      "answer_style": "concise_with_evidence",
       "temperature": 0.0,
-      "prompt_template": "standard",
+      "prompt_template": "strict_no_hallucination",
       "max_new_tokens": 256
     },
     "reranking": {
-      "enabled": true,
+      "enabled": false,
       "model": "bge-reranker-base",
-      "rerank_top_k": 10
+      "rerank_top_k": 3
     },
     "query_processor": {
       "rewrite": true,
       "decompose": true,
       "use_hyde": false,
-      "intent_driven_filter": true
+      "intent_driven_filter": false
     },
-    "train_score": 0.3126,
-    "holdout_score": 0.2466,
-    "overfit_gap": 0.066
+    "train_score": 0.3102,
+    "holdout_score": 0.2913,
+    "overfit_gap": 0.0189
   }
 }

@@ -2,14 +2,12 @@ Query: What signals tend to matter for SME credit assessment?
 
 Answer: Based on the provided context, signals that tend to matter for SME credit assessment include:
 
-- **Bureau signals**: [D006] SME lending decisions typically combine bureau signals.
-- **Cashflow trends**: [D006] SME lending decisions typically combine cashflow trends.
-- **Collateral coverage**: [D006] SME lending decisions typically combine collateral coverage.
-- **Sector outlook**: [D006] SME lending decisions typically combine sector outlook.
-- **Recent delinquency**: [D006] Recent delinquency often materially increases risk.
+- Bureau signals: [D006]
+- Cashflow trends: [D006]
+- Collateral coverage: [D006]
+- Sector outlook: [D006]
+- Recent delinquency: [D006]
 
-These signals are integral to assessing the creditworthiness of Small and Medium Enterprises (SMEs).
-
-Composite: 0.2936
+Composite: 0.2882
 Failure: 答案与证据绑定不足
-RAGChecker: citation=duplicate_citation
+RAGChecker: citation=duplicate_citation | query_proc=under_decomposition
