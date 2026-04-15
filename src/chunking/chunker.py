@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
 
 @dataclass
 class Chunk:
@@ -137,8 +140,10 @@ def _semantic_refine(
     coarse: List[Chunk],
     semantic_min_size: int,
     semantic_max_size: int,
+    window_size: int,
+    similarity_threshold: float,
 ) -> List[Chunk]:
-    """对超长文本块做语义细分，保证块大小落入目标区间。"""
+    """对超长文本块做语义细分，并在滑动窗口内按相似度合并相邻块。"""
     refined: List[Chunk] = []
     for chunk in coarse:
         if chunk.metadata.get("type") in {"table", "image"}:
@@ -157,6 +162,8 @@ def _semantic_refine(
             meta = dict(chunk.metadata)
             meta["semantic_chunk"] = True
             meta["chunk_index"] = int(str(chunk.metadata.get("chunk_index", 0))) * 1000 + sub_idx
+            meta["window_size"] = window_size
+            meta["similarity_threshold"] = similarity_threshold
             sub_id = f"{chunk.chunk_id}_sub{sub_idx}"
             refined.append(Chunk(chunk_id=sub_id, doc_id=chunk.doc_id, text=sub_text, metadata=meta))
             if j == len(words):
@@ -164,7 +171,31 @@ def _semantic_refine(
             i = max(i + 1, j - semantic_min_size // 4)
             sub_idx += 1
 
-    return refined
+    if len(refined) <= 1:
+        return refined
+
+    merged: List[Chunk] = [refined[0]]
+    vec = TfidfVectorizer(ngram_range=(1, 2), min_df=1)
+    for idx in range(1, len(refined)):
+        prev = merged[-1]
+        curr = refined[idx]
+        if prev.metadata.get("type") in {"table", "image"} or curr.metadata.get("type") in {"table", "image"}:
+            merged.append(curr)
+            continue
+        pair = vec.fit_transform([prev.text, curr.text])
+        sim = float(cosine_similarity(pair[0], pair[1])[0][0])
+        if sim >= similarity_threshold and len(merged) >= 1:
+            combined_text = f"{prev.text} {curr.text}".strip()
+            combined_meta = dict(curr.metadata)
+            combined_meta["merged_from"] = f"{prev.chunk_id}|{curr.chunk_id}"
+            combined_meta["merge_similarity"] = round(sim, 4)
+            combined_meta["window_size"] = window_size
+            combined_meta["similarity_threshold"] = similarity_threshold
+            merged[-1] = Chunk(chunk_id=curr.chunk_id, doc_id=curr.doc_id, text=combined_text, metadata=combined_meta)
+        else:
+            merged.append(curr)
+
+    return merged
 
 
 def _inject_overlap(
@@ -230,7 +261,7 @@ def chunk_document(
 
     coarse: List[Chunk] = []
     idx = 0
-    structural_chunk_size = 1000
+    structural_chunk_size = size
     for section in sections:
         new_chunks = _coarse_chunks_from_section(
             doc_id=doc_id,
@@ -242,7 +273,7 @@ def chunk_document(
         idx += len(new_chunks)
         coarse.extend(new_chunks)
 
-    refined = _semantic_refine(coarse, semantic_min_size, semantic_max_size) if strategy == "semantic" else coarse
+    refined = _semantic_refine(coarse, semantic_min_size, semantic_max_size, window_size, similarity_threshold) if strategy == "semantic" else coarse
     final = _inject_overlap(refined, overlap_type, overlap_size)
 
     if not final:
